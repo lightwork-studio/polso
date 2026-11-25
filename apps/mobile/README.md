@@ -32,9 +32,8 @@ If you distribute a fork, give it its own bundle IDs, name and icon, as describe
 Polso asks to read every type in [`src/health/catalog.ts`](src/health/catalog.ts) that the phone's
 iOS version has, and never asks to write. Blood pressure and food are read through their
 component types (systolic and diastolic pressure, nutrients) rather than named in the request.
-Medications, vision prescriptions and clinical records
-need their own authorization and aren't requested yet. Background delivery is off until Polso
-syncs.
+Medications, vision prescriptions and clinical records need their own authorization and aren't
+requested yet. Background delivery is off until Polso syncs.
 
 HealthKit doesn't tell apps which types a person declined, so the app can't tell "no access"
 from "nothing recorded" and shows both as No data.
