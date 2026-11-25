@@ -51,6 +51,7 @@ export function renderHealthTypes(schema: HealthKitSchema): string {
       id: q.name,
       ios: q.ios,
       ...(q.canonicalUnit ? { unit: q.canonicalUnit } : {}),
+      aggregation: q.aggregationStyle === "Cumulative" ? "cumulative" : "discrete",
     }));
   const categories = schema.categoryIdentifiers
     .filter((c) => !c.legacy)
@@ -70,6 +71,8 @@ export interface GeneratedQuantityType {
   readonly ios: string;
   /** HealthKit's canonical unit. Without one, HealthKit picks the preferred unit. */
   readonly unit?: string;
+  /** Cumulative types (steps, energy) add up over a day; discrete ones (heart rate) average. */
+  readonly aggregation: "cumulative" | "discrete";
 }
 
 export interface GeneratedCategoryType {

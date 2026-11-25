@@ -21,6 +21,8 @@ export interface HealthType {
   readonly label: string;
   /** Canonical unit for quantity types. */
   readonly unit?: string;
+  /** For quantity types: whether a day's values add up (steps) or average (heart rate). */
+  readonly aggregation?: "cumulative" | "discrete";
   /** Category value names, by raw value. */
   readonly values?: Readonly<Record<string, string>>;
 }
@@ -112,6 +114,7 @@ export const HEALTH_TYPES: readonly HealthType[] = [
       label: labelFor(q.id),
       // UV exposure, the one type without a canonical unit in the schema, is an index: a count.
       unit: q.unit ?? "count",
+      aggregation: q.aggregation,
     }),
   ),
   ...CATEGORY_TYPES.map(

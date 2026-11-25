@@ -1,7 +1,7 @@
 import * as HK from "@kingstinct/react-native-healthkit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HEALTH_TYPES, type HealthType } from "../src/health/catalog";
-import { healthKit } from "../src/health/healthkit";
+import { healthKit, healthQueries } from "../src/health/healthkit";
 
 // The alias in vitest.config.mts swaps the library for test/support/healthkit.ts.
 const fake = HK as unknown as typeof import("./support/healthkit");
@@ -146,5 +146,118 @@ describe("latest values", () => {
       expect(await healthKit.latest(byId(id))).toEqual({ status: "notPreviewed" });
     }
     expect(fake.queryWorkoutSamples).not.toHaveBeenCalled();
+  });
+});
+
+describe("reads for MCP tools", () => {
+  const range = { start: new Date(2026, 10, 18, 9, 15), end: new Date(2026, 10, 25, 12) };
+  const filter = { date: { startDate: range.start, endDate: range.end } };
+  const source = (name: string) => ({ sourceRevision: { source: { name } } });
+
+  it("reads heart rate per minute and percentages from 0 to 100", async () => {
+    fake.queryQuantitySamples.mockResolvedValueOnce([
+      { startDate: ended, endDate: ended, quantity: 72, unit: "count/min", ...source("Watch") },
+    ]);
+    const [record] = await healthQueries.samples(
+      byId("HKQuantityTypeIdentifierHeartRate"),
+      range,
+      5,
+    );
+    expect(fake.queryQuantitySamples).toHaveBeenCalledWith("HKQuantityTypeIdentifierHeartRate", {
+      filter,
+      limit: 5,
+      ascending: false,
+      unit: "count/min",
+    });
+    expect(record).toEqual({
+      start: ended,
+      end: ended,
+      value: 72,
+      unit: "count/min",
+      source: "Watch",
+    });
+
+    fake.queryQuantitySamples.mockResolvedValueOnce([
+      { startDate: ended, endDate: ended, quantity: 0.97, unit: "%", ...source("Watch") },
+    ]);
+    const [spo2] = await healthQueries.samples(
+      byId("HKQuantityTypeIdentifierOxygenSaturation"),
+      range,
+      1,
+    );
+    expect(spo2?.value).toBeCloseTo(97);
+  });
+
+  it("names category values and refuses kinds without records", async () => {
+    fake.queryCategorySamples.mockResolvedValueOnce([
+      { startDate: ended, endDate: ended, value: 0, ...source("iPhone") },
+    ]);
+    const [mindful] = await healthQueries.samples(
+      byId("HKCategoryTypeIdentifierMindfulSession"),
+      range,
+      1,
+    );
+    expect(mindful?.value).toBe("recorded");
+    await expect(healthQueries.samples(byId("HKWorkoutTypeIdentifier"), range, 1)).rejects.toThrow(
+      "no individual records",
+    );
+  });
+
+  it("asks HealthKit for daily statistics anchored at local midnight", async () => {
+    fake.queryStatisticsCollectionForQuantity.mockResolvedValueOnce([
+      { startDate: new Date(2026, 10, 18), sumQuantity: { quantity: 8214, unit: "count" } },
+      { startDate: new Date(2026, 10, 19) },
+    ]);
+    const days = await healthQueries.dailyStats(
+      byId("HKQuantityTypeIdentifierStepCount"),
+      range,
+      "sum",
+    );
+    expect(fake.queryStatisticsCollectionForQuantity).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      ["cumulativeSum"],
+      new Date(2026, 10, 18),
+      { day: 1 },
+      { filter, unit: "count" },
+    );
+    // A day without data is left out rather than reported as zero.
+    expect(days).toEqual([{ day: new Date(2026, 10, 18), value: 8214 }]);
+  });
+
+  it("maps workouts with their totals", async () => {
+    fake.queryWorkoutSamples.mockResolvedValueOnce([
+      {
+        workoutActivityType: fake.WorkoutActivityType.cycling,
+        startDate: ended,
+        endDate: ended,
+        duration: { quantity: 3600, unit: "s" },
+        totalEnergyBurned: { quantity: 512, unit: "kcal" },
+        ...source("Apple Watch"),
+      },
+    ]);
+    expect(await healthQueries.workouts(range, 10)).toEqual([
+      {
+        activity: "cycling",
+        start: ended,
+        end: ended,
+        durationMinutes: 60,
+        energy: { value: 512, unit: "kcal" },
+        source: "Apple Watch",
+      },
+    ]);
+    expect(fake.queryWorkoutSamples).toHaveBeenCalledWith({ filter, limit: 10, ascending: false });
+  });
+
+  it("passes the sleep record limit to HealthKit and maps stage names", async () => {
+    fake.queryCategorySamples.mockResolvedValueOnce([
+      { startDate: ended, endDate: ended, value: 4, ...source("Apple Watch") },
+    ]);
+    expect(await healthQueries.sleep(range, 20_000)).toEqual([
+      { start: ended, end: ended, stage: "asleepDeep", source: "Apple Watch" },
+    ]);
+    expect(fake.queryCategorySamples).toHaveBeenCalledWith(
+      "HKCategoryTypeIdentifierSleepAnalysis",
+      { filter, limit: 20_000, ascending: true },
+    );
   });
 });

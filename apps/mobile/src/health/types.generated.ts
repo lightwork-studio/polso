@@ -7,6 +7,8 @@ export interface GeneratedQuantityType {
   readonly ios: string;
   /** HealthKit's canonical unit. Without one, HealthKit picks the preferred unit. */
   readonly unit?: string;
+  /** Cumulative types (steps, energy) add up over a day; discrete ones (heart rate) average. */
+  readonly aggregation: "cumulative" | "discrete";
 }
 
 export interface GeneratedCategoryType {
@@ -20,606 +22,727 @@ export const QUANTITY_TYPES: readonly GeneratedQuantityType[] = [
   {
     "id": "HKQuantityTypeIdentifierActiveEnergyBurned",
     "ios": "8.0",
-    "unit": "kcal"
+    "unit": "kcal",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierAppleExerciseTime",
     "ios": "9.3",
-    "unit": "min"
+    "unit": "min",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierAppleMoveTime",
     "ios": "14.5",
-    "unit": "min"
+    "unit": "min",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances",
     "ios": "18.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
     "ios": "16.0",
-    "unit": "degC"
+    "unit": "degC",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierAppleStandTime",
     "ios": "13.0",
-    "unit": "min"
+    "unit": "min",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierAppleWalkingSteadiness",
     "ios": "15.0",
-    "unit": "%"
+    "unit": "%",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierAtrialFibrillationBurden",
     "ios": "16.0",
-    "unit": "%"
+    "unit": "%",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBasalBodyTemperature",
     "ios": "9.0",
-    "unit": "degC"
+    "unit": "degC",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBasalEnergyBurned",
     "ios": "8.0",
-    "unit": "kcal"
+    "unit": "kcal",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierBloodAlcoholContent",
     "ios": "8.0",
-    "unit": "%"
+    "unit": "%",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBloodGlucose",
     "ios": "8.0",
-    "unit": "mg/dL"
+    "unit": "mg/dL",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBloodPressureDiastolic",
     "ios": "8.0",
-    "unit": "mmHg"
+    "unit": "mmHg",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBloodPressureSystolic",
     "ios": "8.0",
-    "unit": "mmHg"
+    "unit": "mmHg",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBodyFatPercentage",
     "ios": "8.0",
-    "unit": "%"
+    "unit": "%",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBodyMass",
     "ios": "8.0",
-    "unit": "kg"
+    "unit": "kg",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBodyMassIndex",
     "ios": "8.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierBodyTemperature",
     "ios": "8.0",
-    "unit": "degC"
+    "unit": "degC",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierCrossCountrySkiingSpeed",
     "ios": "18.0",
-    "unit": "m/s"
+    "unit": "m/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierCyclingCadence",
     "ios": "17.0",
-    "unit": "count/min"
+    "unit": "count/min",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierCyclingFunctionalThresholdPower",
     "ios": "17.0",
-    "unit": "W"
+    "unit": "W",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierCyclingPower",
     "ios": "17.0",
-    "unit": "W"
+    "unit": "W",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierCyclingSpeed",
     "ios": "17.0",
-    "unit": "m/s"
+    "unit": "m/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryBiotin",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryCaffeine",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryCalcium",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryCarbohydrates",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryChloride",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryCholesterol",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryChromium",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryCopper",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryEnergyConsumed",
     "ios": "8.0",
-    "unit": "kcal"
+    "unit": "kcal",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryFatMonounsaturated",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryFatPolyunsaturated",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryFatSaturated",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryFatTotal",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryFiber",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryFolate",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryIodine",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryIron",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryMagnesium",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryManganese",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryMolybdenum",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryNiacin",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryPantothenicAcid",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryPhosphorus",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryPotassium",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryProtein",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryRiboflavin",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietarySelenium",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietarySodium",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietarySugar",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryThiamin",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryVitaminA",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryVitaminB12",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryVitaminB6",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryVitaminC",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryVitaminD",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryVitaminE",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryVitaminK",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryWater",
     "ios": "9.0",
-    "unit": "mL"
+    "unit": "mL",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDietaryZinc",
     "ios": "8.0",
-    "unit": "g"
+    "unit": "g",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistanceCrossCountrySkiing",
     "ios": "18.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistanceCycling",
     "ios": "8.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistanceDownhillSnowSports",
     "ios": "11.2",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistancePaddleSports",
     "ios": "18.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistanceRowing",
     "ios": "18.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistanceSkatingSports",
     "ios": "18.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistanceSwimming",
     "ios": "10.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistanceWalkingRunning",
     "ios": "8.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierDistanceWheelchair",
     "ios": "10.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierElectrodermalActivity",
     "ios": "8.0",
-    "unit": "S"
+    "unit": "S",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierEnvironmentalAudioExposure",
     "ios": "13.0",
-    "unit": "dBASPL"
+    "unit": "dBASPL",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierEnvironmentalSoundReduction",
     "ios": "16.0",
-    "unit": "dBASPL"
+    "unit": "dBASPL",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierEstimatedWorkoutEffortScore",
     "ios": "18.0",
-    "unit": "appleEffortScore"
+    "unit": "appleEffortScore",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierFlightsClimbed",
     "ios": "8.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierForcedExpiratoryVolume1",
     "ios": "8.0",
-    "unit": "L"
+    "unit": "L",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierForcedVitalCapacity",
     "ios": "8.0",
-    "unit": "L"
+    "unit": "L",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierHeadphoneAudioExposure",
     "ios": "13.0",
-    "unit": "dBASPL"
+    "unit": "dBASPL",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierHeartRate",
     "ios": "8.0",
-    "unit": "count/s"
+    "unit": "count/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierHeartRateRecoveryOneMinute",
     "ios": "16.0",
-    "unit": "count/min"
+    "unit": "count/min",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierHeartRateVariabilityRMSSD",
     "ios": "27.0",
-    "unit": "ms"
+    "unit": "ms",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
     "ios": "11.0",
-    "unit": "ms"
+    "unit": "ms",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierHeight",
     "ios": "8.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierInhalerUsage",
     "ios": "8.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierInsulinDelivery",
     "ios": "11.0",
-    "unit": "IU"
+    "unit": "IU",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierLeanBodyMass",
     "ios": "8.0",
-    "unit": "kg"
+    "unit": "kg",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierNikeFuel",
     "ios": "8.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierNumberOfAlcoholicBeverages",
     "ios": "15.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierNumberOfTimesFallen",
     "ios": "8.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierOxygenSaturation",
     "ios": "8.0",
-    "unit": "%"
+    "unit": "%",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierPaddleSportsSpeed",
     "ios": "18.0",
-    "unit": "m/s"
+    "unit": "m/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierPeakExpiratoryFlowRate",
     "ios": "8.0",
-    "unit": "L/min"
+    "unit": "L/min",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierPeripheralPerfusionIndex",
     "ios": "8.0",
-    "unit": "%"
+    "unit": "%",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierPhysicalEffort",
     "ios": "17.0",
-    "unit": "kcal/(kg*hr)"
+    "unit": "kcal/(kg*hr)",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierPushCount",
     "ios": "10.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierRespiratoryRate",
     "ios": "8.0",
-    "unit": "count/s"
+    "unit": "count/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierRestingHeartRate",
     "ios": "11.0",
-    "unit": "count/min"
+    "unit": "count/min",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierRowingSpeed",
     "ios": "18.0",
-    "unit": "m/s"
+    "unit": "m/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierRunningGroundContactTime",
     "ios": "16.0",
-    "unit": "ms"
+    "unit": "ms",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierRunningPower",
     "ios": "16.0",
-    "unit": "W"
+    "unit": "W",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierRunningSpeed",
     "ios": "16.0",
-    "unit": "m/s"
+    "unit": "m/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierRunningStrideLength",
     "ios": "16.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierRunningVerticalOscillation",
     "ios": "16.0",
-    "unit": "cm"
+    "unit": "cm",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierSixMinuteWalkTestDistance",
     "ios": "14.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierStairAscentSpeed",
     "ios": "14.0",
-    "unit": "m/s"
+    "unit": "m/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierStairDescentSpeed",
     "ios": "14.0",
-    "unit": "m/s"
+    "unit": "m/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierStepCount",
     "ios": "8.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierSwimmingStrokeCount",
     "ios": "10.0",
-    "unit": "count"
+    "unit": "count",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierTimeInDaylight",
     "ios": "17.0",
-    "unit": "min"
+    "unit": "min",
+    "aggregation": "cumulative"
   },
   {
     "id": "HKQuantityTypeIdentifierUnderwaterDepth",
     "ios": "16.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierUVExposure",
-    "ios": "9.0"
+    "ios": "9.0",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierVO2Max",
     "ios": "11.0",
-    "unit": "ml/(kg*min)"
+    "unit": "ml/(kg*min)",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierWaistCircumference",
     "ios": "11.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
     "ios": "14.0",
-    "unit": "%"
+    "unit": "%",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
     "ios": "14.0",
-    "unit": "%"
+    "unit": "%",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierWalkingHeartRateAverage",
     "ios": "11.0",
-    "unit": "count/min"
+    "unit": "count/min",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierWalkingSpeed",
     "ios": "14.0",
-    "unit": "m/s"
+    "unit": "m/s",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierWalkingStepLength",
     "ios": "14.0",
-    "unit": "m"
+    "unit": "m",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierWaterTemperature",
     "ios": "16.0",
-    "unit": "degC"
+    "unit": "degC",
+    "aggregation": "discrete"
   },
   {
     "id": "HKQuantityTypeIdentifierWorkoutEffortScore",
     "ios": "18.0",
-    "unit": "appleEffortScore"
+    "unit": "appleEffortScore",
+    "aggregation": "discrete"
   }
 ];
 
