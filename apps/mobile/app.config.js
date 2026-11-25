@@ -7,7 +7,7 @@ const variants = {
 };
 
 module.exports = ({ config }) => {
-  const variant = process.env.POLSO_APP_VARIANT || "development";
+  const variant = process.env.POLSO_APP_VARIANT ?? "development";
   if (!Object.hasOwn(variants, variant)) {
     throw new Error(`Unknown Polso app variant: ${variant}`);
   }

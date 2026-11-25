@@ -11,7 +11,7 @@
     "check:builds": "pnpm --filter @polso/mobile check:ios-bundle",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "typecheck": "pnpm -r --if-present typecheck",
+    "typecheck": "tsc -p . && pnpm -r --if-present typecheck",
     "test": "vitest run",
     "dev:app": "pnpm --filter @polso/mobile start"
   },

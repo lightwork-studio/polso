@@ -44,4 +44,7 @@ it("refuses an unknown variant instead of building under a default identity", ()
   expect(resolveApp).toThrow("Unknown Polso app variant: prodution");
   vi.stubEnv("POLSO_APP_VARIANT", "toString");
   expect(resolveApp).toThrow("Unknown Polso app variant: toString");
+  // An unset CI variable expands to an empty string; that must not fall back to Dev.
+  vi.stubEnv("POLSO_APP_VARIANT", "");
+  expect(resolveApp).toThrow("Unknown Polso app variant: ");
 });

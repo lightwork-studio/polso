@@ -3,8 +3,11 @@
 The iPhone app. It's built with Expo and runs on iOS only, because HealthKit is iOS only.
 
 ```sh
-pnpm dev:app    # Expo dev server for a development build
+pnpm exec expo run:ios    # from apps/mobile on a Mac: build and install Polso Dev
+pnpm dev:app              # then start the dev server it connects to
 ```
+
+Without a Mac, build Polso Dev on EAS with `eas build --profile development` from this directory.
 
 Expo generates the `ios/` project from the app configuration and native dependencies. Keep native
 changes in the config or config plugins so a clean checkout can build them. The generated project
