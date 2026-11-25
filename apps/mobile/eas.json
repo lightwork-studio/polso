@@ -1,0 +1,26 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "environment": "development",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "POLSO_APP_VARIANT": "development" }
+    },
+    "preview": {
+      "environment": "preview",
+      "distribution": "store",
+      "autoIncrement": true,
+      "env": { "POLSO_APP_VARIANT": "preview" }
+    },
+    "production": {
+      "environment": "production",
+      "distribution": "store",
+      "autoIncrement": true,
+      "env": { "POLSO_APP_VARIANT": "production" }
+    }
+  }
+}
