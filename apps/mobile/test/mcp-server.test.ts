@@ -100,6 +100,12 @@ describe("access", () => {
       `Authorization: Bearer ${TOKEN}\r\nX: a\nOrigin: https://example.test\r\n`,
       400,
     ],
+    [
+      "an origin behind a line feed right after the colon",
+      `Authorization: Bearer ${TOKEN}\r\nX:\nOrigin: https://example.test\r\n`,
+      400,
+    ],
+    ["control characters around the token", `Authorization:\x0bBearer ${TOKEN}\x0c\r\n`, 400],
     ["a NUL in a value", `Authorization: Bearer ${TOKEN}\r\nX: a\0b\r\n`, 400],
     ["a repeated Content-Length", `Authorization: Bearer ${TOKEN}\r\nContent-Length: 2\r\n`, 400],
     [

@@ -117,9 +117,11 @@ export class RequestReader {
       // Names are tokens with nothing before the colon; folded lines start with whitespace.
       if (colon <= 0 || !TOKEN.test(name)) return plain(400, "Malformed header.");
       const key = name.toLowerCase();
-      const value = line.slice(colon + 1).trim();
+      const raw = line.slice(colon + 1);
       // A bare CR or LF would hide a second header inside this one; other controls are invalid.
-      if (CONTROL.test(value)) return plain(400, "Malformed header.");
+      // Checked before trimming, since trim() would also strip them from the ends.
+      if (CONTROL.test(raw)) return plain(400, "Malformed header.");
+      const value = raw.replace(/^[ \t]+|[ \t]+$/g, "");
       headers[key] = key in headers ? `${headers[key]}, ${value}` : value;
     }
 

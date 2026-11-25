@@ -22,8 +22,8 @@ const DETAILED = new Set(["asleepCore", "asleepDeep", "asleepREM"]);
 const minutes = (r: SleepRecord) => (r.end.getTime() - r.start.getTime()) / 60_000;
 const round = (n: number) => Math.round(n * 10) / 10;
 
-/** A record ending at or before local noon belongs to the previous evening. */
-function nightOf(end: Date): string {
+/** The night a time falls in: at or before local noon, it belongs to the previous evening. */
+export function nightOf(end: Date): string {
   const day = new Date(end);
   const noon = new Date(end);
   noon.setHours(12, 0, 0, 0);

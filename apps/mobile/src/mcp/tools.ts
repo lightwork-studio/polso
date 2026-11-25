@@ -1,7 +1,7 @@
 import { GROUP_ORDER, groupOf, type HealthGroup, type HealthType } from "../health/catalog";
 import { formatDay } from "../health/format";
 import { agentUnit, type DateRange, type HealthQueries, type Statistic } from "../health/queries";
-import { summarizeNights } from "./sleep";
+import { nightOf, summarizeNights } from "./sleep";
 
 /** What a tool call needs: the types this phone has, the reads, and the current time. */
 export interface ToolContext {
@@ -387,10 +387,14 @@ async function getSleep(args: Args, ctx: ToolContext) {
   const window = { start: addDays(firstNight, 0, 12), end: addDays(lastNight, 1, 12) };
   const records = await ctx.queries.sleep(window, SLEEP_RECORD_LIMIT);
   const [first, last] = [formatDay(firstNight), formatDay(lastNight)];
-  const nights = summarizeNights(records).filter((n) => n.night >= first && n.night <= last);
-  // Records come oldest first, so a cut-off read ends inside its last night: leave that one out.
+  // Records come by start time, oldest first. A cut-off read may miss any record starting at or
+  // after its last record's start, so only nights before that one are complete.
   const truncated = records.length === SLEEP_RECORD_LIMIT;
-  if (truncated) nights.pop();
+  const lastStart = records[records.length - 1]?.start;
+  const complete = truncated && lastStart ? nightOf(lastStart) : undefined;
+  const nights = summarizeNights(records).filter(
+    (n) => n.night >= first && n.night <= last && (complete === undefined || n.night < complete),
+  );
   return { nights, truncated };
 }
 

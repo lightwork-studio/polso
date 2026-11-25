@@ -245,6 +245,25 @@ describe("get_workouts and get_sleep", () => {
     expect((out.nights as { night: string }[]).map((n) => n.night)).toEqual(["2026-11-23"]);
   });
 
+  it("at the cap, also leaves out a night a record crossing noon would hide", async () => {
+    const rec = (start: Date, end: Date, stage: string, source: string) => ({
+      start,
+      end,
+      stage,
+      source,
+    });
+    queries.sleep.mockImplementationOnce(async (_range, limit) => [
+      ...Array(limit - 2).fill(
+        rec(new Date(2026, 10, 23, 23), new Date(2026, 10, 24, 7), "asleepCore", "Watch"),
+      ),
+      rec(new Date(2026, 10, 24, 11, 50), new Date(2026, 10, 24, 11, 55), "asleepCore", "A"),
+      // Starts in night 23 but ends in night 24; records the read missed may still be in night 23.
+      rec(new Date(2026, 10, 24, 11, 55), new Date(2026, 10, 24, 12, 30), "inBed", "B"),
+    ]);
+    const out = await run("get_sleep", { start: "2026-11-22", end: "2026-11-24" });
+    expect(out).toEqual({ nights: [], truncated: true });
+  });
+
   it("leaves out sleep the read returns for nights outside the range", async () => {
     const rec = (start: Date, end: Date) => ({ start, end, stage: "asleepCore", source: "Watch" });
     queries.sleep.mockResolvedValueOnce([
@@ -329,21 +348,25 @@ describe("nights", () => {
     expect(nights[0]).toMatchObject({ source: "Bed sensor", asleepMinutes: 480 });
   });
 
-  it("prefers stages when that source has most of the sleep", () => {
+  it.each([
+    [384, "Watch"], // exactly 80% of the bed sensor's 480 minutes
+    [383, "Bed sensor"],
+  ])("prefers stages when that source has %i of 480 minutes asleep", (asleep, source) => {
     const nights = summarizeNights([
-      rec("asleepCore", at(24, 23, 30), at(25, 6, 30), "Watch"),
+      rec("asleepCore", at(24, 23), new Date(at(24, 23).getTime() + asleep * 60_000), "Watch"),
       rec("asleepUnspecified", at(24, 23), at(25, 7), "Bed sensor"),
     ]);
-    expect(nights[0]).toMatchObject({ source: "Watch", asleepMinutes: 420 });
+    expect(nights[0]?.source).toBe(source);
   });
 
   it("takes bedtime and wake time from the main sleep and counts naps in the minutes", () => {
+    // Out of order, so the blocks only come out right if the records are sorted first.
     const nights = summarizeNights([
-      rec("asleepCore", at(24, 14), at(24, 14, 40)),
-      rec("asleepCore", at(24, 23), at(25, 3)),
-      rec("awake", at(25, 3), at(25, 3, 20)),
       rec("asleepCore", at(25, 4), at(25, 7)), // 40 minutes after waking: still the same block
       rec("asleepCore", at(25, 10), at(25, 11)),
+      rec("awake", at(25, 3), at(25, 3, 20)),
+      rec("asleepCore", at(24, 14), at(24, 14, 40)),
+      rec("asleepCore", at(24, 23), at(25, 3)),
     ]);
     expect(nights).toEqual([
       expect.objectContaining({
