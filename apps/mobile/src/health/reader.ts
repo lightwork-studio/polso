@@ -36,8 +36,8 @@ export function availableTypes(
 }
 
 /**
- * Shows the permission sheet for every type this iOS version has. Asking for a type the system
- * doesn't know would make HealthKit reject the whole request, so those are left out.
+ * Shows the permission sheet for every type this iOS version has. Types the system doesn't know
+ * are left out, so the request only names types the person can actually grant.
  */
 export async function requestReadAccess(
   source: HealthSource,

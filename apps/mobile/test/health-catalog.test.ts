@@ -34,7 +34,7 @@ describe("the type catalog", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("uses only identifiers the library knows, so HealthKit won't reject the request", () => {
+  it("uses only identifiers the library knows, so none is silently dropped", () => {
     const known = ["Constants.ts", "Characteristics.ts", "CorrelationType.ts"]
       .map(librarySource)
       .join("\n");

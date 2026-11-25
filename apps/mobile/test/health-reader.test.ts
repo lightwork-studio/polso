@@ -32,7 +32,7 @@ function fakeSource(options: {
 }
 
 describe("asking for access", () => {
-  it("leaves out types this iOS version doesn't have, which would fail the whole request", async () => {
+  it("asks only for types this iOS version has", async () => {
     const source = fakeSource({ missing: [newType.id] });
     await requestReadAccess(source, [steps, newType, heartRate]);
     expect(source.requested).toEqual([[steps.id, heartRate.id]]);
