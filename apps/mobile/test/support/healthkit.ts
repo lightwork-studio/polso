@@ -70,3 +70,18 @@ export const getBloodTypeAsync = vi.fn(async () => BloodType.notSet);
 export const getFitzpatrickSkinTypeAsync = vi.fn(async () => FitzpatrickSkinType.notSet);
 export const getWheelchairUseAsync = vi.fn(async () => WheelchairUse.notSet);
 export const getDateOfBirthAsync = vi.fn(async (): Promise<Date | undefined> => undefined);
+export const queryQuantitySamples = vi.fn(
+  async (_id: string, _options: unknown): Promise<unknown[]> => [],
+);
+export const queryCategorySamples = vi.fn(
+  async (_id: string, _options: unknown): Promise<unknown[]> => [],
+);
+export const queryStatisticsCollectionForQuantity = vi.fn(
+  async (
+    _id: string,
+    _statistics: unknown,
+    _anchor: Date,
+    _interval: unknown,
+    _options: unknown,
+  ): Promise<unknown[]> => [],
+);

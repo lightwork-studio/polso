@@ -17,17 +17,28 @@ import {
   isHealthDataAvailable,
   type ObjectTypeIdentifier,
   type QuantityTypeIdentifier,
+  queryCategorySamples,
   queryCorrelationSamples,
   queryElectrocardiogramSamples,
   queryHeartbeatSeriesSamples,
+  queryQuantitySamples,
   queryStateOfMindSamples,
+  queryStatisticsCollectionForQuantity,
   queryWorkoutSamples,
   requestAuthorization,
   WheelchairUse,
   WorkoutActivityType,
 } from "@kingstinct/react-native-healthkit";
-import { type HealthType, valueLabel } from "./catalog";
+import { HEALTH_TYPES, type HealthType, valueLabel } from "./catalog";
 import { formatCategory, formatDay, formatDuration, formatQuantity } from "./format";
+import {
+  agentUnit,
+  agentValue,
+  type DateRange,
+  type HealthQueries,
+  type SampleRecord,
+  type Statistic,
+} from "./queries";
 import type { HealthSource, Preview } from "./reader";
 
 // The catalog holds plain strings; HealthKit's identifier types are unions of the same strings.
@@ -140,4 +151,114 @@ export const healthKit: HealthSource = {
     await requestAuthorization({ toRead: asIds(ids) });
   },
   latest,
+};
+
+// --- Reads behind the MCP tools ---
+
+const between = (range: DateRange) => ({
+  date: { startDate: range.start, endDate: range.end },
+});
+const sourceName = (sample: { sourceRevision?: { source?: { name?: string } } }) =>
+  sample.sourceRevision?.source?.name ?? "unknown";
+const categoryValue = (type: HealthType, value: number) => {
+  const name = type.values?.[String(value)];
+  return name === "notApplicable" ? "recorded" : (name ?? value);
+};
+
+const STATISTIC_OPTION = {
+  sum: "cumulativeSum",
+  average: "discreteAverage",
+  min: "discreteMin",
+  max: "discreteMax",
+} as const;
+const STATISTIC_FIELD = {
+  sum: "sumQuantity",
+  average: "averageQuantity",
+  min: "minimumQuantity",
+  max: "maximumQuantity",
+} as const;
+
+const SLEEP_ID = "HKCategoryTypeIdentifierSleepAnalysis";
+const sleepType = HEALTH_TYPES.find((t) => t.id === SLEEP_ID) as HealthType;
+
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+export const healthQueries: HealthQueries = {
+  async samples(type, range, limit): Promise<SampleRecord[]> {
+    const options = { filter: between(range), limit, ascending: false } as const;
+    if (type.kind === "quantity") {
+      const rows = await queryQuantitySamples(type.id as QuantityTypeIdentifier, {
+        ...options,
+        unit: agentUnit(type) as never,
+      });
+      return rows.map((s) => ({
+        start: s.startDate,
+        end: s.endDate,
+        value: agentValue(s.quantity, s.unit),
+        unit: s.unit,
+        source: sourceName(s),
+      }));
+    }
+    if (type.kind === "category") {
+      const rows = await queryCategorySamples(type.id as CategoryTypeIdentifier, options);
+      return rows.map((s) => ({
+        start: s.startDate,
+        end: s.endDate,
+        value: categoryValue(type, Number(s.value)),
+        source: sourceName(s),
+      }));
+    }
+    throw new Error(`${type.label} has no individual records to list.`);
+  },
+
+  async dailyStats(type, range, statistic: Statistic) {
+    const rows = await queryStatisticsCollectionForQuantity(
+      type.id as QuantityTypeIdentifier,
+      [STATISTIC_OPTION[statistic]],
+      startOfDay(range.start),
+      { day: 1 },
+      { filter: between(range), unit: agentUnit(type) as never },
+    );
+    return rows.flatMap((row) => {
+      const quantity = row[STATISTIC_FIELD[statistic]];
+      if (!quantity || !row.startDate) return [];
+      return [{ day: row.startDate, value: agentValue(quantity.quantity, quantity.unit) }];
+    });
+  },
+
+  async workouts(range, limit) {
+    const rows = await queryWorkoutSamples({ filter: between(range), limit, ascending: false });
+    return rows.map((w) => ({
+      activity: WorkoutActivityType[w.workoutActivityType] ?? "other",
+      start: w.startDate,
+      end: w.endDate,
+      durationMinutes: w.duration.quantity / 60,
+      ...(w.totalEnergyBurned && {
+        energy: { value: w.totalEnergyBurned.quantity, unit: w.totalEnergyBurned.unit },
+      }),
+      ...(w.totalDistance && {
+        distance: { value: w.totalDistance.quantity, unit: w.totalDistance.unit },
+      }),
+      source: sourceName(w),
+    }));
+  },
+
+  async sleep(range) {
+    const rows = await queryCategorySamples(SLEEP_ID, {
+      filter: between(range),
+      limit: 0,
+      ascending: true,
+    });
+    return rows.map((s) => ({
+      start: s.startDate,
+      end: s.endDate,
+      stage: String(categoryValue(sleepType, Number(s.value))),
+      source: sourceName(s),
+    }));
+  },
+
+  async characteristic(type) {
+    const preview = await characteristic(type.id);
+    return preview.status === "value" ? preview.text : undefined;
+  },
 };
