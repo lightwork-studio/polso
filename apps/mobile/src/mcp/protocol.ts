@@ -18,6 +18,7 @@ export const PARSE_ERROR = -32700;
 export const INVALID_REQUEST = -32600;
 export const METHOD_NOT_FOUND = -32601;
 export const INVALID_PARAMS = -32602;
+export const INTERNAL_ERROR = -32603;
 
 const error = (id: Id | null, code: number, message: string): JsonRpcResponse => ({
   jsonrpc: "2.0",
@@ -76,9 +77,10 @@ export async function handleMessage(
     case "tools/call": {
       const name = params?.name;
       const args = params?.arguments ?? {};
-      if (typeof name !== "string" || !isTool(name)) {
-        return error(id, INVALID_PARAMS, `Unknown tool: ${String(name)}`);
+      if (typeof name !== "string") {
+        return error(id, INVALID_PARAMS, "The tool name must be a string.");
       }
+      if (!isTool(name)) return error(id, INVALID_PARAMS, `Unknown tool: ${name}`);
       if (!isObject(args)) return error(id, INVALID_PARAMS, "Arguments must be an object.");
       try {
         const value = await callTool(name, args, await context());

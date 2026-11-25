@@ -39,6 +39,9 @@ const plain = (status: number, message: string): HttpResponse => ({
   body: message,
 });
 const TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+/** Control characters other than tab, which RFC 9112 doesn't allow in header values. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+const CONTROL = /[\x00-\x08\x0a-\x1f\x7f]/;
 
 /**
  * Reads one HTTP/1.1 request from a connection's bytes as they arrive. The head is parsed once;
@@ -115,6 +118,8 @@ export class RequestReader {
       if (colon <= 0 || !TOKEN.test(name)) return plain(400, "Malformed header.");
       const key = name.toLowerCase();
       const value = line.slice(colon + 1).trim();
+      // A bare CR or LF would hide a second header inside this one; other controls are invalid.
+      if (CONTROL.test(value)) return plain(400, "Malformed header.");
       headers[key] = key in headers ? `${headers[key]}, ${value}` : value;
     }
 

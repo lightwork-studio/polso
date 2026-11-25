@@ -225,20 +225,43 @@ describe("get_workouts and get_sleep", () => {
     );
   });
 
-  it("queries one whole night and reports when the read reaches the cap", async () => {
-    const record = {
-      start: new Date(2026, 10, 24, 23),
-      end: new Date(2026, 10, 25, 7),
+  it("queries whole nights and, at the cap, leaves out the night the read cut off", async () => {
+    const night = (day: number) => ({
+      start: new Date(2026, 10, day, 23),
+      end: new Date(2026, 10, day + 1, 7),
       stage: "asleepUnspecified",
       source: "Watch",
-    };
-    queries.sleep.mockImplementationOnce(async (_range, limit) => Array(limit).fill(record));
-    const out = await run("get_sleep", { start: "2026-11-24", end: "2026-11-24" });
+    });
+    queries.sleep.mockImplementationOnce(async (_range, limit) => [
+      ...Array(limit - 1).fill(night(23)),
+      night(24),
+    ]);
+    const out = await run("get_sleep", { start: "2026-11-23", end: "2026-11-24" });
     expect(queries.sleep).toHaveBeenCalledWith(
-      { start: new Date(2026, 10, 24, 12), end: new Date(2026, 10, 25, 12) },
+      { start: new Date(2026, 10, 23, 12), end: new Date(2026, 10, 25, 12) },
       SLEEP_RECORD_LIMIT,
     );
     expect(out.truncated).toBe(true);
+    expect((out.nights as { night: string }[]).map((n) => n.night)).toEqual(["2026-11-23"]);
+  });
+
+  it("leaves out sleep the read returns for nights outside the range", async () => {
+    const rec = (start: Date, end: Date) => ({ start, end, stage: "asleepCore", source: "Watch" });
+    queries.sleep.mockResolvedValueOnce([
+      rec(new Date(2026, 10, 23, 10), new Date(2026, 10, 23, 12)), // ends the night before
+      rec(new Date(2026, 10, 23, 23), new Date(2026, 10, 24, 7)),
+      rec(new Date(2026, 10, 24, 11), new Date(2026, 10, 24, 12, 30)), // a late riser's next night
+    ]);
+    const out = await run("get_sleep", { start: "2026-11-23", end: "2026-11-23" });
+    expect(out.nights).toMatchObject([{ night: "2026-11-23", asleepMinutes: 480 }]);
+  });
+});
+
+describe("category values", () => {
+  it("lists the value records carry for types without values of their own", async () => {
+    const out = await run("list_health_types");
+    const types = out.types as { type: string; values?: string[] }[];
+    expect(types.find((t) => t.type === "MindfulSession")?.values).toEqual(["recorded"]);
   });
 });
 
@@ -296,6 +319,40 @@ describe("nights", () => {
       rec("asleepUnspecified", at(24, 23), at(25, 6), "Watch"),
     ]);
     expect(nights[0]).toMatchObject({ source: "Watch", asleepMinutes: 420, inBedMinutes: 720 });
+  });
+
+  it("prefers a full night without stages over a watch that stopped early", () => {
+    const nights = summarizeNights([
+      rec("asleepCore", at(24, 23), at(24, 23, 30), "Watch"),
+      rec("asleepUnspecified", at(24, 23), at(25, 7), "Bed sensor"),
+    ]);
+    expect(nights[0]).toMatchObject({ source: "Bed sensor", asleepMinutes: 480 });
+  });
+
+  it("prefers stages when that source has most of the sleep", () => {
+    const nights = summarizeNights([
+      rec("asleepCore", at(24, 23, 30), at(25, 6, 30), "Watch"),
+      rec("asleepUnspecified", at(24, 23), at(25, 7), "Bed sensor"),
+    ]);
+    expect(nights[0]).toMatchObject({ source: "Watch", asleepMinutes: 420 });
+  });
+
+  it("takes bedtime and wake time from the main sleep and counts naps in the minutes", () => {
+    const nights = summarizeNights([
+      rec("asleepCore", at(24, 14), at(24, 14, 40)),
+      rec("asleepCore", at(24, 23), at(25, 3)),
+      rec("awake", at(25, 3), at(25, 3, 20)),
+      rec("asleepCore", at(25, 4), at(25, 7)), // 40 minutes after waking: still the same block
+      rec("asleepCore", at(25, 10), at(25, 11)),
+    ]);
+    expect(nights).toEqual([
+      expect.objectContaining({
+        night: "2026-11-24",
+        bedtime: at(24, 23).toISOString(),
+        wakeTime: at(25, 7).toISOString(),
+        asleepMinutes: 40 + 240 + 180 + 60,
+      }),
+    ]);
   });
 
   it("assigns records ending at noon to the previous evening", () => {

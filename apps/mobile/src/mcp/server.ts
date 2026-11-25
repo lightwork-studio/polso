@@ -1,6 +1,7 @@
 import type { HttpHead, HttpRequest, HttpResponse } from "./http";
 import {
   handleMessage,
+  INTERNAL_ERROR,
   INVALID_REQUEST,
   PARSE_ERROR,
   PROTOCOL_VERSIONS,
@@ -52,12 +53,13 @@ export function sameToken(given: string, expected: string): boolean {
  * can't reach the endpoint through their browser.
  */
 export function checkHead(head: HttpHead, token: string): HttpResponse | undefined {
-  if (head.path !== MCP_PATH) return text(404, "Not found.");
   if (head.headers.origin !== undefined) return text(403, "Forbidden.");
+  // The token comes before the path, so without it every path answers alike.
   const match = /^Bearer +([A-Za-z0-9._~+/-]+=*)$/i.exec(head.headers.authorization ?? "");
   if (token.length < MIN_TOKEN_LENGTH || !match || !sameToken(match[1] as string, token)) {
-    return text(401, "Unauthorized.", { "www-authenticate": 'Bearer realm="mcp"' });
+    return text(401, "Unauthorized.", { "www-authenticate": "Bearer" });
   }
+  if (head.path !== MCP_PATH) return text(404, "Not found.");
   return undefined;
 }
 
@@ -94,7 +96,17 @@ export async function handleHttp(
       error: { code: PARSE_ERROR, message: "Invalid JSON." },
     });
   }
-  const response = await handleMessage(message, options.context, options.server);
+  let response: Awaited<ReturnType<typeof handleMessage>>;
+  try {
+    response = await handleMessage(message, options.context, options.server);
+  } catch {
+    // Every request gets an answer, and the error text stays on the phone.
+    return json(500, {
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: INTERNAL_ERROR, message: "Internal error." },
+    });
+  }
   if (!response) return { status: 202 };
   return json(response.error?.code === INVALID_REQUEST ? 400 : 200, response);
 }

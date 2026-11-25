@@ -121,7 +121,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: "get_sleep",
     title: "Get sleep by night",
     description:
-      "Returns one summary per night: bedtime, wake time, minutes asleep and minutes per sleep stage. A night is named by the date it starts on and runs noon to noon. Each night uses one source so overlapping records aren't counted twice. At most 92 nights; defaults to the last 7.",
+      "Returns one summary per night: bedtime, wake time, minutes asleep and minutes per sleep stage. A night is named by the date it starts on and runs noon to noon, so sleep past noon counts for the next night. Bedtime and wake time are those of the night's main sleep; the minutes include naps. Each night uses one source so overlapping records aren't counted twice. At most 92 nights; defaults to the last 7.",
     inputSchema: object({
       start: { type: "string", description: "The first night, as a date (YYYY-MM-DD)." },
       end: { type: "string", description: "The last night, as a date. Defaults to last night." },
@@ -289,7 +289,11 @@ async function listTypes(args: Args, ctx: ToolContext) {
       group: groupOf(t),
       tools: toolsFor(t),
       ...(t.kind === "quantity" && { unit: agentUnit(t), aggregation: t.aggregation }),
-      ...(t.kind === "category" && t.values && { values: Object.values(t.values) }),
+      // Records name the "notApplicable" value "recorded" (see the HealthKit adapter); match them.
+      ...(t.kind === "category" &&
+        t.values && {
+          values: Object.values(t.values).map((v) => (v === "notApplicable" ? "recorded" : v)),
+        }),
     }));
   return { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, types };
 }
@@ -384,7 +388,10 @@ async function getSleep(args: Args, ctx: ToolContext) {
   const records = await ctx.queries.sleep(window, SLEEP_RECORD_LIMIT);
   const [first, last] = [formatDay(firstNight), formatDay(lastNight)];
   const nights = summarizeNights(records).filter((n) => n.night >= first && n.night <= last);
-  return { nights, truncated: records.length === SLEEP_RECORD_LIMIT };
+  // Records come oldest first, so a cut-off read ends inside its last night: leave that one out.
+  const truncated = records.length === SLEEP_RECORD_LIMIT;
+  if (truncated) nights.pop();
+  return { nights, truncated };
 }
 
 const HANDLERS: Record<string, (args: Args, ctx: ToolContext) => Promise<unknown>> = {

@@ -59,8 +59,17 @@ describe("access", () => {
     const withHeaders = { ...req, headers: { ...req.headers, authorization: "", ...headers } };
     const res = await handleHttp(withHeaders, options);
     expect(res.status).toBe(401);
-    expect(res.headers?.["www-authenticate"]).toBe('Bearer realm="mcp"');
+    expect(res.headers?.["www-authenticate"]).toBe("Bearer");
     expect(queries.samples).not.toHaveBeenCalled();
+  });
+
+  it.each(["/", "/mcp", "/admin"])("answers %s alike without the token", async (path) => {
+    const res = await handleHttp({ method: "GET", path, headers: {}, body: "" }, options);
+    expect(res).toEqual({
+      status: 401,
+      headers: { "content-type": "text/plain; charset=utf-8", "www-authenticate": "Bearer" },
+      body: "Unauthorized.",
+    });
   });
 
   it.each(["", "short-token"])("refuses a missing or too-short configured token", async (token) => {
@@ -86,6 +95,18 @@ describe("access", () => {
     ],
     ["a folded header", `Authorization: Bearer ${TOKEN}\r\n Folded: value\r\n`, 400],
     ["space before the colon", `Authorization : Bearer ${TOKEN}\r\n`, 400],
+    [
+      "an origin hidden behind a bare line feed",
+      `Authorization: Bearer ${TOKEN}\r\nX: a\nOrigin: https://example.test\r\n`,
+      400,
+    ],
+    ["a NUL in a value", `Authorization: Bearer ${TOKEN}\r\nX: a\0b\r\n`, 400],
+    ["a repeated Content-Length", `Authorization: Bearer ${TOKEN}\r\nContent-Length: 2\r\n`, 400],
+    [
+      "a Transfer-Encoding",
+      `Authorization: Bearer ${TOKEN}\r\nTransfer-Encoding: chunked\r\n`,
+      411,
+    ],
     ["valid credentials", `Authorization: bearer ${TOKEN}\r\n`, null],
   ])("handles %s as soon as the headers finish", (_, headers, status) => {
     const reader = new RequestReader((head) => checkHead(head, TOKEN));
@@ -216,6 +237,24 @@ describe("MCP", () => {
     expect(res.json.error.code).toBe(-32602);
   });
 
+  it.each([{ toString: 1 }, null, 7])("refuses a tool name that isn't a string: %j", async (n) => {
+    const res = await call(post(rpc("tools/call", { name: n })));
+    expect(res.json.error).toEqual({ code: -32602, message: "The tool name must be a string." });
+  });
+
+  it("answers an unexpected failure with a generic error", async () => {
+    const server = {
+      version: "0.1.0",
+      get name(): string {
+        throw new Error("secret detail");
+      },
+    };
+    const res = await handleHttp(post(rpc("initialize")), { ...options, server });
+    expect(res.status).toBe(500);
+    expect(res.body).not.toContain("secret detail");
+    expect(JSON.parse(res.body as string).error.code).toBe(-32603);
+  });
+
   it("returns bad arguments to the agent as a tool error it can fix", async () => {
     const res = await call(
       post(rpc("tools/call", { name: "get_samples", arguments: { type: "Nonsense" } })),
@@ -244,5 +283,14 @@ describe("MCP", () => {
     const res = await call(parsed.request);
     expect(res.status).toBe(200);
     expect(res.json.result.tools).toHaveLength(6);
+  });
+
+  it("reads one request per connection and ignores bytes after its body", () => {
+    const reader = new RequestReader((head) => checkHead(head, TOKEN));
+    const head = `POST /mcp HTTP/1.1\r\nAuthorization: Bearer ${TOKEN}\r\nContent-Length: 2\r\n\r\n`;
+    const smuggled = `GET /other HTTP/1.1\r\n\r\n`;
+    const first = reader.push(encodeUtf8(`${head}{}${smuggled}`));
+    expect(first).toMatchObject({ state: "complete", request: { path: "/mcp", body: "{}" } });
+    expect(reader.push(encodeUtf8(smuggled))).toBe(first);
   });
 });
