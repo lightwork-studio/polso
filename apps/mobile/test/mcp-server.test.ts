@@ -3,10 +3,10 @@ import { HEALTH_TYPES } from "../src/health/catalog";
 import type { HealthQueries } from "../src/health/queries";
 import { type HttpRequest, RequestReader } from "../src/mcp/http";
 import { PROTOCOL_VERSIONS } from "../src/mcp/protocol";
-import { type EndpointOptions, handleHttp, sameToken } from "../src/mcp/server";
+import { checkHead, type EndpointOptions, handleHttp, sameToken } from "../src/mcp/server";
 import { encodeUtf8 } from "../src/mcp/utf8";
 
-const TOKEN = "k3J9vQ2mX7pL0sR4tW8yZ1aB5cD6eF";
+const TOKEN = "k3J9vQ2mX7pL0sR4tW8yZ1aB5cD6eF4n";
 const queries: HealthQueries = {
   samples: vi.fn(async () => []),
   dailyStats: vi.fn(async () => []),
@@ -59,16 +59,48 @@ describe("access", () => {
     const withHeaders = { ...req, headers: { ...req.headers, authorization: "", ...headers } };
     const res = await handleHttp(withHeaders, options);
     expect(res.status).toBe(401);
-    expect(res.headers?.["www-authenticate"]).toBe('Bearer realm="polso"');
+    expect(res.headers?.["www-authenticate"]).toBe('Bearer realm="mcp"');
     expect(queries.samples).not.toHaveBeenCalled();
   });
 
-  it("refuses everything when no token is configured", async () => {
-    const res = await handleHttp(
-      { ...post(rpc("ping")), headers: { ...post(rpc("ping")).headers, authorization: "Bearer " } },
-      { ...options, token: "" },
-    );
+  it.each(["", "short-token"])("refuses a missing or too-short configured token", async (token) => {
+    const res = await handleHttp(post(rpc("ping"), { authorization: `Bearer ${token}` }), {
+      ...options,
+      token,
+    });
     expect(res.status).toBe(401);
+  });
+
+  it.each([
+    ["missing credentials", "", 401],
+    [
+      "repeated authorization",
+      `Authorization: Bearer ${TOKEN}\r\nAuthorization: Bearer ${TOKEN}\r\n`,
+      401,
+    ],
+    ["an empty origin", `Authorization: Bearer ${TOKEN}\r\nOrigin:\r\n`, 403],
+    [
+      "repeated origins",
+      `Authorization: Bearer ${TOKEN}\r\nOrigin: null\r\nOrigin: https://example.test\r\n`,
+      403,
+    ],
+    ["a folded header", `Authorization: Bearer ${TOKEN}\r\n Folded: value\r\n`, 400],
+    ["space before the colon", `Authorization : Bearer ${TOKEN}\r\n`, 400],
+    ["valid credentials", `Authorization: bearer ${TOKEN}\r\n`, null],
+  ])("handles %s as soon as the headers finish", (_, headers, status) => {
+    const reader = new RequestReader((head) => checkHead(head, TOKEN));
+    const head = `POST /mcp HTTP/1.1\r\nHost: phone:8765\r\nContent-Length: 2\r\n${headers}\r\n`;
+    expect(reader.push(encodeUtf8(head.slice(0, -1)))).toEqual({ state: "incomplete" });
+    const result = reader.push(encodeUtf8(head.slice(-1)));
+    if (status === null) {
+      expect(result).toEqual({ state: "incomplete" });
+      expect(reader.push(encodeUtf8("{}"))).toMatchObject({
+        state: "complete",
+        request: { body: "{}" },
+      });
+    } else {
+      expect(result).toMatchObject({ state: "error", response: { status } });
+    }
   });
 
   it("refuses requests from web pages even with the token", async () => {
@@ -207,7 +239,7 @@ describe("MCP", () => {
   it("works end to end from raw request bytes", async () => {
     const body = JSON.stringify(rpc("tools/list"));
     const text = `POST /mcp HTTP/1.1\r\nHost: phone:8765\r\nAuthorization: Bearer ${TOKEN}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n${body}`;
-    const parsed = new RequestReader().push(encodeUtf8(text));
+    const parsed = new RequestReader((head) => checkHead(head, TOKEN)).push(encodeUtf8(text));
     if (parsed.state !== "complete") throw new Error(parsed.state);
     const res = await call(parsed.request);
     expect(res.status).toBe(200);

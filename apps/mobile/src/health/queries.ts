@@ -48,7 +48,8 @@ export interface HealthQueries {
   /** One value per local day in the range, for a quantity type; days without data are left out. */
   dailyStats(type: HealthType, range: DateRange, statistic: Statistic): Promise<DailyValue[]>;
   workouts(range: DateRange, limit: number): Promise<WorkoutRecord[]>;
-  sleep(range: DateRange): Promise<SleepRecord[]>;
+  /** Sleep analysis records overlapping the range, oldest first, at most `limit`. */
+  sleep(range: DateRange, limit: number): Promise<SleepRecord[]>;
   /** A profile value such as blood type, or undefined when it isn't set. */
   characteristic(type: HealthType): Promise<string | undefined>;
 }

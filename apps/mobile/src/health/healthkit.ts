@@ -243,10 +243,10 @@ export const healthQueries: HealthQueries = {
     }));
   },
 
-  async sleep(range) {
+  async sleep(range, limit) {
     const rows = await queryCategorySamples(SLEEP_ID, {
       filter: between(range),
-      limit: 0,
+      limit,
       ascending: true,
     });
     return rows.map((s) => ({

@@ -89,7 +89,11 @@ export const TOOLS: readonly ToolDefinition[] = [
     inputSchema: object(
       {
         type: typeArg,
-        start: startArg,
+        start: {
+          ...startArg,
+          description:
+            "The first local day to include. Defaults to six calendar days before the end date.",
+        },
         end: endArg,
         statistic: {
           type: "string",
@@ -117,8 +121,11 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: "get_sleep",
     title: "Get sleep by night",
     description:
-      "Returns one summary per night in a range: bedtime, wake time, minutes asleep and minutes per sleep stage. Each night uses one source so overlapping records aren't counted twice. At most 92 days.",
-    inputSchema: object({ start: startArg, end: endArg }),
+      "Returns one summary per night: bedtime, wake time, minutes asleep and minutes per sleep stage. A night is named by the date it starts on and runs noon to noon. Each night uses one source so overlapping records aren't counted twice. At most 92 nights; defaults to the last 7.",
+    inputSchema: object({
+      start: { type: "string", description: "The first night, as a date (YYYY-MM-DD)." },
+      end: { type: "string", description: "The last night, as a date. Defaults to last night." },
+    }),
     annotations: readOnly,
   },
 ];
@@ -143,28 +150,59 @@ function integer(args: Args, name: string, fallback: number, max: number): numbe
 }
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)?$/;
+const HOUR = 60 * 60 * 1000;
 
-function parseDate(text: string, name: string, endOfDay: boolean): Date {
+/** Local midnight (or `hour`) of a calendar date plus `days`; years below 100 work too. */
+function localDay(year: number, month: number, day: number, days = 0, hour = 0): Date {
+  const date = new Date(0);
+  date.setHours(hour, 0, 0, 0);
+  date.setFullYear(year, month - 1, day + days);
+  return date;
+}
+const dayOf = (date: Date) => localDay(date.getFullYear(), date.getMonth() + 1, date.getDate());
+const addDays = (date: Date, days: number, hour = 0) =>
+  localDay(date.getFullYear(), date.getMonth() + 1, date.getDate(), days, hour);
+
+function calendarDay(year: number, month: number, day: number): Date {
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  return date;
+}
+
+/** Calendar days from one local date to another, unaffected by daylight saving. */
+const dayNumber = (date: Date) =>
+  calendarDay(date.getFullYear(), date.getMonth() + 1, date.getDate()).getTime() / DAY;
+
+function parseDate(text: string, name: string, endOfDay: boolean, dateOnly = false): Date {
+  const invalid = () =>
+    new ToolInputError(`"${name}" must be an ISO 8601 ${dateOnly ? "date" : "date or date-time"}.`);
   const day = DATE_ONLY.exec(text);
-  const date = day
-    ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]) + (endOfDay ? 1 : 0))
-    : new Date(text);
-  if (Number.isNaN(date.getTime()) || (!day && !/^\d{4}-\d{2}-\d{2}T/.test(text))) {
-    throw new ToolInputError(`"${name}" must be an ISO 8601 date or date-time, not "${text}".`);
+  const match = day ?? (dateOnly ? null : DATE_TIME.exec(text));
+  if (!match) throw invalid();
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const calendarDate = calendarDay(y, m, d);
+  if (calendarDate.getUTCMonth() !== m - 1 || calendarDate.getUTCDate() !== d) throw invalid();
+  if (day) {
+    return endOfDay ? new Date(localDay(y, m, d, 1).getTime() - 1) : localDay(y, m, d);
   }
-  // A date-only end means the end of that day, which is midnight of the next.
-  return endOfDay && day ? new Date(date.getTime() - 1) : date;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) throw invalid();
+  return date;
 }
 
 function range(args: Args, ctx: ToolContext, maxDays: number): DateRange {
   const endText = string(args, "end");
   const startText = string(args, "start");
-  const end = endText ? parseDate(endText, "end", true) : ctx.now;
-  const start = startText
-    ? parseDate(startText, "start", false)
-    : new Date(end.getTime() - 7 * DAY);
+  const end = endText === undefined ? ctx.now : parseDate(endText, "end", true);
+  const start =
+    startText === undefined
+      ? new Date(end.getTime() - 7 * DAY)
+      : parseDate(startText, "start", false);
   if (start >= end) throw new ToolInputError('"start" must be before "end".');
-  if (end.getTime() - start.getTime() > maxDays * DAY) {
+  // An hour of slack, so a range across a daylight saving change still fits.
+  if (end.getTime() - start.getTime() > maxDays * DAY + HOUR) {
     throw new ToolInputError(`The range can be at most ${maxDays} days.`);
   }
   return { start, end };
@@ -204,9 +242,34 @@ function findType(args: Args, ctx: ToolContext, kinds?: readonly string[]): Heal
     throw new ToolInputError(`Unknown type "${name}". Call list_health_types for the names.`);
   }
   if (kinds && !kinds.includes(type.kind)) {
-    throw new ToolInputError(`"${shortName(type.id)}" doesn't support this tool.`);
+    const tools = toolsFor(type);
+    throw new ToolInputError(
+      tools.length > 0
+        ? `"${shortName(type.id)}" doesn't work with this tool; use ${tools.join(" or ")}.`
+        : `Polso can't read "${shortName(type.id)}" yet.`,
+    );
   }
   return type;
+}
+
+const SLEEP_ID = "HKCategoryTypeIdentifierSleepAnalysis";
+
+/** The tools that can read a type, so agents know where to go. */
+export function toolsFor(type: HealthType): string[] {
+  switch (type.kind) {
+    case "quantity":
+      return ["get_latest", "get_samples", "get_daily_stats"];
+    case "category":
+      return type.id === SLEEP_ID
+        ? ["get_sleep", "get_latest", "get_samples"]
+        : ["get_latest", "get_samples"];
+    case "characteristic":
+      return ["get_latest"];
+    case "workout":
+      return ["get_workouts"];
+    default:
+      return [];
+  }
 }
 
 const iso = (date: Date) => date.toISOString();
@@ -224,6 +287,7 @@ async function listTypes(args: Args, ctx: ToolContext) {
       type: shortName(t.id),
       label: t.label,
       group: groupOf(t),
+      tools: toolsFor(t),
       ...(t.kind === "quantity" && { unit: agentUnit(t), aggregation: t.aggregation }),
       ...(t.kind === "category" && t.values && { values: Object.values(t.values) }),
     }));
@@ -271,7 +335,15 @@ async function getDailyStats(args: Args, ctx: ToolContext) {
         : `"${shortName(type.id)}" doesn't add up over a day; use average, min or max.`,
     );
   }
-  const r = range(args, ctx, 366);
+  const endText = string(args, "end");
+  const startText = string(args, "start");
+  const end = endText === undefined ? ctx.now : parseDate(endText, "end", true);
+  const start = startText === undefined ? addDays(end, -6) : parseDate(startText, "start", false);
+  if (start > end) throw new ToolInputError('"start" must not be after "end".');
+  if (dayNumber(end) - dayNumber(start) >= 366) {
+    throw new ToolInputError("The range can be at most 366 days.");
+  }
+  const r = { start: dayOf(start), end };
   const days = await ctx.queries.dailyStats(type, r, statistic);
   return {
     type: shortName(type.id),
@@ -291,9 +363,28 @@ async function getWorkouts(args: Args, ctx: ToolContext) {
   };
 }
 
+export const SLEEP_RECORD_LIMIT = 20_000;
+
+/**
+ * Sleep is asked for by night: `start` and `end` name the first and last night by the date it
+ * starts on, and each night runs from noon to noon, so no night is cut off at either end.
+ */
 async function getSleep(args: Args, ctx: ToolContext) {
-  const r = range(args, ctx, 92);
-  return { nights: summarizeNights(await ctx.queries.sleep(r)) };
+  const startText = string(args, "start");
+  const endText = string(args, "end");
+  const lastNight =
+    endText === undefined ? addDays(ctx.now, -1) : parseDate(endText, "end", false, true);
+  const firstNight =
+    startText === undefined ? addDays(lastNight, -6) : parseDate(startText, "start", false, true);
+  const count = dayNumber(lastNight) - dayNumber(firstNight) + 1;
+  if (count < 1) throw new ToolInputError('"start" must not be after "end".');
+  if (count > 92) throw new ToolInputError("The range can be at most 92 nights.");
+
+  const window = { start: addDays(firstNight, 0, 12), end: addDays(lastNight, 1, 12) };
+  const records = await ctx.queries.sleep(window, SLEEP_RECORD_LIMIT);
+  const [first, last] = [formatDay(firstNight), formatDay(lastNight)];
+  const nights = summarizeNights(records).filter((n) => n.night >= first && n.night <= last);
+  return { nights, truncated: records.length === SLEEP_RECORD_LIMIT };
 }
 
 const HANDLERS: Record<string, (args: Args, ctx: ToolContext) => Promise<unknown>> = {
@@ -308,8 +399,17 @@ const HANDLERS: Record<string, (args: Args, ctx: ToolContext) => Promise<unknown
 export const isTool = (name: string) => Object.hasOwn(HANDLERS, name);
 
 /** Runs a tool. Throws ToolInputError for bad arguments and passes on HealthKit errors. */
-export function callTool(name: string, args: Args, ctx: ToolContext): Promise<unknown> {
+export async function callTool(name: string, args: Args, ctx: ToolContext): Promise<unknown> {
   const handler = HANDLERS[name];
-  if (!handler) throw new Error(`Unknown tool ${name}`);
+  const tool = TOOLS.find((t) => t.name === name);
+  if (!handler || !tool) throw new Error(`Unknown tool ${name}`);
+  const known = Object.keys(tool.inputSchema.properties as object);
+  const unknown = Object.keys(args).filter((key) => !known.includes(key));
+  if (unknown.length > 0) {
+    const list = (keys: string[]) => keys.map((k) => `"${k}"`).join(", ");
+    throw new ToolInputError(
+      `Unknown argument ${list(unknown)}. This tool takes ${list(known) || "no arguments"}.`,
+    );
+  }
   return handler(args, ctx);
 }

@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HEALTH_TYPES, type HealthType } from "../src/health/catalog";
 import type { HealthQueries } from "../src/health/queries";
 import { summarizeNights } from "../src/mcp/sleep";
-import { callTool, shortName, type ToolContext, ToolInputError } from "../src/mcp/tools";
+import {
+  callTool,
+  SLEEP_RECORD_LIMIT,
+  shortName,
+  type ToolContext,
+  ToolInputError,
+} from "../src/mcp/tools";
 
 const now = new Date(2026, 10, 25, 12, 0);
 const DAY = 24 * 60 * 60 * 1000;
@@ -29,10 +35,12 @@ describe("list_health_types", () => {
     expect(types.find((t) => t.type === "HeartRate")).toMatchObject({
       unit: "count/min",
       aggregation: "discrete",
+      tools: ["get_latest", "get_samples", "get_daily_stats"],
     });
     expect(types.find((t) => t.type === "StepCount")).toMatchObject({ aggregation: "cumulative" });
     expect(types.find((t) => t.type === "SleepAnalysis")).toMatchObject({
       values: expect.arrayContaining(["asleepDeep", "inBed"]),
+      tools: ["get_sleep", "get_latest", "get_samples"],
     });
   });
 
@@ -119,8 +127,12 @@ describe("get_samples", () => {
 
   it.each([
     [{ type: "Nonsense" }, "Unknown type"],
-    [{ type: "Workout" }, "doesn't support"],
+    [{ type: "Workout" }, "use get_workouts"],
     [{ type: "StepCount", start: "yesterday" }, "ISO 8601"],
+    [{ type: "StepCount", start: "" }, "ISO 8601"],
+    [{ type: "StepCount", start: "2026-02-29" }, "ISO 8601"],
+    [{ type: "StepCount", start: "2026-02-30T10:00:00Z" }, "ISO 8601"],
+    [{ type: "StepCount", from: "2026-11-20" }, 'Unknown argument "from"'],
     [{ type: "StepCount", start: "2026-11-20T10:00:00Z", end: "2026-11-19T10:00:00Z" }, "before"],
     [{ type: "StepCount", limit: 5000 }, "1 to 1000"],
     [{ type: "StepCount", limit: "10" }, "1 to 1000"],
@@ -158,6 +170,17 @@ describe("get_daily_stats", () => {
     expect(queries.dailyStats.mock.calls[1]?.[2]).toBe("average");
   });
 
+  it("includes the full first day and the current day's data so far by default", async () => {
+    await run("get_daily_stats", { type: "StepCount" });
+    expect(queries.dailyStats).toHaveBeenCalledWith(
+      byShort("StepCount"),
+      { start: new Date(2026, 10, 19), end: now },
+      "sum",
+    );
+    await run("get_daily_stats", { type: "StepCount", start: "2026-11-22T14:00:00" });
+    expect(queries.dailyStats.mock.calls[1]?.[1].start).toEqual(new Date(2026, 10, 22));
+  });
+
   it("refuses statistics that don't fit the type, and ranges over a year", async () => {
     await expect(run("get_daily_stats", { type: "HeartRate", statistic: "sum" })).rejects.toThrow(
       "average, min or max",
@@ -169,7 +192,7 @@ describe("get_daily_stats", () => {
       run("get_daily_stats", { type: "StepCount", start: "2024-01-01", end: "2026-01-01" }),
     ).rejects.toThrow("366 days");
     await expect(run("get_daily_stats", { type: "SleepAnalysis" })).rejects.toThrow(
-      "doesn't support",
+      "use get_sleep",
     );
   });
 });
@@ -183,7 +206,7 @@ describe("get_workouts and get_sleep", () => {
 
   it("limits sleep to 92 days and summarizes by night", async () => {
     await expect(run("get_sleep", { start: "2026-01-01", end: "2026-11-01" })).rejects.toThrow(
-      "92 days",
+      "92 nights",
     );
     queries.sleep.mockResolvedValueOnce([
       {
@@ -195,6 +218,27 @@ describe("get_workouts and get_sleep", () => {
     ]);
     const out = await run("get_sleep");
     expect(out.nights).toMatchObject([{ night: "2026-11-24", asleepMinutes: 420 }]);
+    expect(out.truncated).toBe(false);
+    expect(queries.sleep).toHaveBeenCalledWith(
+      { start: new Date(2026, 10, 18, 12), end: new Date(2026, 10, 25, 12) },
+      SLEEP_RECORD_LIMIT,
+    );
+  });
+
+  it("queries one whole night and reports when the read reaches the cap", async () => {
+    const record = {
+      start: new Date(2026, 10, 24, 23),
+      end: new Date(2026, 10, 25, 7),
+      stage: "asleepUnspecified",
+      source: "Watch",
+    };
+    queries.sleep.mockImplementationOnce(async (_range, limit) => Array(limit).fill(record));
+    const out = await run("get_sleep", { start: "2026-11-24", end: "2026-11-24" });
+    expect(queries.sleep).toHaveBeenCalledWith(
+      { start: new Date(2026, 10, 24, 12), end: new Date(2026, 10, 25, 12) },
+      SLEEP_RECORD_LIMIT,
+    );
+    expect(out.truncated).toBe(true);
   });
 });
 
@@ -223,7 +267,7 @@ describe("nights", () => {
         bedtime: at(24, 23).toISOString(),
         wakeTime: at(25, 6, 40).toISOString(),
         asleepMinutes: 180 + 60 + 210,
-        inBedMinutes: 0,
+        inBedMinutes: 510,
         stages: { asleepCore: 180, asleepDeep: 60, awake: 10, asleepREM: 210 },
       },
     ]);
@@ -244,6 +288,19 @@ describe("nights", () => {
       rec("asleepUnspecified", at(24, 23), at(25, 7), "iPhone"),
     ]);
     expect(nights[0]).toMatchObject({ source: "iPhone", asleepMinutes: 480 });
+  });
+
+  it("keeps sleep from one source and uses time in bed from another when needed", () => {
+    const nights = summarizeNights([
+      rec("inBed", at(24, 20), at(25, 8), "iPhone"),
+      rec("asleepUnspecified", at(24, 23), at(25, 6), "Watch"),
+    ]);
+    expect(nights[0]).toMatchObject({ source: "Watch", asleepMinutes: 420, inBedMinutes: 720 });
+  });
+
+  it("assigns records ending at noon to the previous evening", () => {
+    const nights = summarizeNights([rec("asleepCore", at(25, 11), at(25, 12))]);
+    expect(nights[0]?.night).toBe("2026-11-24");
   });
 });
 

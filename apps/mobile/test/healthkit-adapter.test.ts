@@ -248,16 +248,16 @@ describe("reads for MCP tools", () => {
     expect(fake.queryWorkoutSamples).toHaveBeenCalledWith({ filter, limit: 10, ascending: false });
   });
 
-  it("reads every sleep record in the range with its stage name", async () => {
+  it("passes the sleep record limit to HealthKit and maps stage names", async () => {
     fake.queryCategorySamples.mockResolvedValueOnce([
       { startDate: ended, endDate: ended, value: 4, ...source("Apple Watch") },
     ]);
-    expect(await healthQueries.sleep(range)).toEqual([
+    expect(await healthQueries.sleep(range, 20_000)).toEqual([
       { start: ended, end: ended, stage: "asleepDeep", source: "Apple Watch" },
     ]);
     expect(fake.queryCategorySamples).toHaveBeenCalledWith(
       "HKCategoryTypeIdentifierSleepAnalysis",
-      { filter, limit: 0, ascending: true },
+      { filter, limit: 20_000, ascending: true },
     );
   });
 });

@@ -1,10 +1,14 @@
 import { decodeUtf8, encodeUtf8 } from "./utf8";
 
-export interface HttpRequest {
+/** The request line and headers, available before the body arrives. */
+export interface HttpHead {
   readonly method: string;
   readonly path: string;
-  /** Header names in lower case. */
+  /** Header names in lower case. Repeated headers are joined with ", ". */
   readonly headers: Readonly<Record<string, string>>;
+}
+
+export interface HttpRequest extends HttpHead {
   readonly body: string;
 }
 
@@ -15,73 +19,118 @@ export interface HttpResponse {
 }
 
 export const MAX_HEADER_BYTES = 16 * 1024;
-export const MAX_BODY_BYTES = 1024 * 1024;
+/** MCP requests to Polso are small JSON messages. */
+export const MAX_BODY_BYTES = 64 * 1024;
 
 export type ParseResult =
   | { readonly state: "incomplete" }
   | { readonly state: "complete"; readonly request: HttpRequest }
   | { readonly state: "error"; readonly response: HttpResponse };
 
-const fail = (status: number, message: string): ParseResult => ({
-  state: "error",
-  response: { status, headers: { "content-type": "text/plain; charset=utf-8" }, body: message },
-});
+/**
+ * Decides from the head alone whether to refuse a request, so a client without access can't make
+ * Polso receive a body. Returns the refusal, or undefined to read on.
+ */
+export type HeadCheck = (head: HttpHead) => HttpResponse | undefined;
 
-function indexOfHeaderEnd(bytes: Uint8Array): number {
-  for (let i = 3; i < bytes.length; i++) {
-    if (bytes[i - 3] === 13 && bytes[i - 2] === 10 && bytes[i - 1] === 13 && bytes[i] === 10) {
-      return i + 1;
-    }
-  }
-  return -1;
-}
+const plain = (status: number, message: string): HttpResponse => ({
+  status,
+  headers: { "content-type": "text/plain; charset=utf-8" },
+  body: message,
+});
+const TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 /**
- * Reads one HTTP/1.1 request from a connection's bytes as they arrive. Bodies need a
- * Content-Length; chunked uploads and oversized requests are refused.
+ * Reads one HTTP/1.1 request from a connection's bytes as they arrive. The head is parsed once;
+ * the body goes into a buffer sized from Content-Length. Chunked uploads and oversized requests
+ * are refused. After a final result, further bytes are ignored.
  */
 export class RequestReader {
-  private buffer = new Uint8Array(0);
+  private pending?: { head: HttpHead; body: Uint8Array };
+  private headBytes: number[] = [];
+  private received = 0;
+  private result?: ParseResult;
+
+  constructor(private readonly check?: HeadCheck) {}
 
   push(chunk: Uint8Array): ParseResult {
-    const merged = new Uint8Array(this.buffer.length + chunk.length);
-    merged.set(this.buffer);
-    merged.set(chunk, this.buffer.length);
-    this.buffer = merged;
-
-    const headerEnd = indexOfHeaderEnd(this.buffer);
-    if (headerEnd < 0) {
-      return this.buffer.length > MAX_HEADER_BYTES
-        ? fail(431, "Request headers are too large.")
-        : { state: "incomplete" };
+    if (this.result) return this.result;
+    let offset = 0;
+    if (!this.pending) {
+      // Collect bytes up to the blank line that ends the head, a byte at a time, without
+      // re-reading what came before.
+      for (; offset < chunk.length; offset++) {
+        this.headBytes.push(chunk[offset] as number);
+        const n = this.headBytes.length;
+        if (n > MAX_HEADER_BYTES) return this.finish(plain(431, "Request headers are too large."));
+        if (
+          n >= 4 &&
+          this.headBytes[n - 4] === 13 &&
+          this.headBytes[n - 3] === 10 &&
+          this.headBytes[n - 2] === 13 &&
+          this.headBytes[n - 1] === 10
+        ) {
+          offset++;
+          const refused = this.readHead();
+          if (refused) return this.finish(refused);
+          break;
+        }
+      }
     }
-    if (headerEnd > MAX_HEADER_BYTES) return fail(431, "Request headers are too large.");
+    if (!this.pending) return { state: "incomplete" };
 
-    // Header bytes are ASCII in practice; anything else is decoded leniently.
-    const lines = decodeUtf8(this.buffer.subarray(0, headerEnd - 4)).split("\r\n");
-    const [method, target, version] = (lines[0] ?? "").split(" ");
-    if (!method || !target || !version?.startsWith("HTTP/1.")) {
-      return fail(400, "Malformed request line.");
+    const { head, body } = this.pending;
+    const take = Math.min(chunk.length - offset, body.length - this.received);
+    if (take > 0) body.set(chunk.subarray(offset, offset + take), this.received);
+    this.received += take;
+    if (this.received < body.length) return { state: "incomplete" };
+
+    const request = { ...head, body: decodeUtf8(body) };
+    this.result = { state: "complete", request };
+    return this.result;
+  }
+
+  private finish(response: HttpResponse): ParseResult {
+    this.result = { state: "error", response };
+    return this.result;
+  }
+
+  /** Parses the head; returns a refusal, or undefined once the body can be read. */
+  private readHead(): HttpResponse | undefined {
+    const lines = decodeUtf8(Uint8Array.from(this.headBytes.slice(0, -4))).split("\r\n");
+    this.headBytes = [];
+    const [method, target, version, extra] = (lines[0] ?? "").split(" ");
+    if (!method || !TOKEN.test(method) || !target || extra !== undefined) {
+      return plain(400, "Malformed request line.");
     }
-    const headers: Record<string, string> = {};
+    if (version !== "HTTP/1.1" && version !== "HTTP/1.0") {
+      return plain(400, "Malformed request line.");
+    }
+    // No prototype, so header names like __proto__ are plain keys.
+    const headers: Record<string, string> = Object.create(null);
     for (const line of lines.slice(1)) {
       const colon = line.indexOf(":");
-      if (colon <= 0) return fail(400, "Malformed header.");
-      const name = line.slice(0, colon).trim().toLowerCase();
+      const name = line.slice(0, colon);
+      // Names are tokens with nothing before the colon; folded lines start with whitespace.
+      if (colon <= 0 || !TOKEN.test(name)) return plain(400, "Malformed header.");
+      const key = name.toLowerCase();
       const value = line.slice(colon + 1).trim();
-      headers[name] = name in headers ? `${headers[name]}, ${value}` : value;
+      headers[key] = key in headers ? `${headers[key]}, ${value}` : value;
     }
 
-    if (headers["transfer-encoding"]) return fail(411, "Send the body with a Content-Length.");
+    if (headers["transfer-encoding"] !== undefined) {
+      return plain(411, "Send the body with a Content-Length.");
+    }
     const lengthHeader = headers["content-length"] ?? "0";
-    if (!/^\d+$/.test(lengthHeader)) return fail(400, "Invalid Content-Length.");
+    if (!/^\d{1,9}$/.test(lengthHeader)) return plain(400, "Invalid Content-Length.");
     const length = Number(lengthHeader);
-    if (length > MAX_BODY_BYTES) return fail(413, "Request body is too large.");
-    if (this.buffer.length < headerEnd + length) return { state: "incomplete" };
+    if (length > MAX_BODY_BYTES) return plain(413, "Request body is too large.");
 
-    const body = decodeUtf8(this.buffer.subarray(headerEnd, headerEnd + length));
-    const path = target.split("?")[0] as string;
-    return { state: "complete", request: { method, path, headers, body } };
+    const head: HttpHead = { method, path: target.split("?")[0] as string, headers };
+    const refused = this.check?.(head);
+    if (refused) return refused;
+    this.pending = { head, body: new Uint8Array(length) };
+    return undefined;
   }
 }
 
@@ -93,12 +142,12 @@ const REASONS: Record<number, string> = {
   403: "Forbidden",
   404: "Not Found",
   405: "Method Not Allowed",
-  406: "Not Acceptable",
   411: "Length Required",
   413: "Content Too Large",
   415: "Unsupported Media Type",
   431: "Request Header Fields Too Large",
   500: "Internal Server Error",
+  503: "Service Unavailable",
 };
 
 /** Serializes a response for a connection that closes after it. */

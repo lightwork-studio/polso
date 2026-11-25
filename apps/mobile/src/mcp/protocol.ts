@@ -4,7 +4,7 @@ import { callTool, isTool, TOOLS, type ToolContext, ToolInputError } from "./too
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
 
 const INSTRUCTIONS =
-  "Read-only access to the person's Apple Health data on their iPhone. Call list_health_types first to find type names. Times are ISO 8601 in UTC; days and nights are in the phone's time zone, which list_health_types reports. Types the person didn't allow return no data.";
+  "Read-only access to the person's Apple Health data on their iPhone. Call list_health_types first to find type names. Returned times are ISO 8601 in UTC. Dates and times you send without an offset, and the days and nights in results, are in the phone's time zone, which list_health_types reports. Types the person didn't allow return no data.";
 
 type Id = string | number;
 export interface JsonRpcResponse {
