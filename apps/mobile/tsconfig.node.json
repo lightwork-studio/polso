@@ -3,5 +3,5 @@
   "compilerOptions": {
     "allowImportingTsExtensions": true
   },
-  "include": ["test", "vitest.config.mts"]
+  "include": ["scripts", "test", "vitest.config.mts"]
 }

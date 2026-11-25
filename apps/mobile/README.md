@@ -26,3 +26,17 @@ installed on one phone, each with its own Health permissions.
 
 If you distribute a fork, give it its own bundle IDs, name and icon, as described in the
 [branding terms](../../TRADEMARKS.md).
+
+## Health access
+
+Polso asks to read every type in [`src/health/catalog.ts`](src/health/catalog.ts) that the phone's
+iOS version has, and never asks to write. Medications, vision prescriptions and clinical records
+need their own authorization and aren't requested yet. Background delivery is off until Polso
+syncs.
+
+HealthKit doesn't tell apps which types a person declined, so the app can't tell "no access"
+from "nothing recorded" and shows both as No data.
+
+The quantity and category types come from the schema in `@kingstinct/react-native-healthkit`.
+After upgrading that library, run `node scripts/health-types.mts` from this directory to refresh
+`src/health/types.generated.ts`; a test fails until you do.

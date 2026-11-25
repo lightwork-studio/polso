@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!assets", "!apps/mobile/assets"]
+    "includes": ["**", "!assets", "!apps/mobile/assets", "!**/*.generated.*"]
   },
   "formatter": {
     "indentStyle": "space",
