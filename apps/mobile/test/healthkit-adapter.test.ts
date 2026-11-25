@@ -58,6 +58,11 @@ describe("latest values", () => {
   it.each([
     ["HKQuantityTypeIdentifierOxygenSaturation", 0.98, "%", "98%"],
     ["HKQuantityTypeIdentifierBloodAlcoholContent", 0.0008, "%", "0.08%"],
+    ["HKQuantityTypeIdentifierHeartRate", 73 / 60, "count/s", "73 bpm"],
+    ["HKQuantityTypeIdentifierRespiratoryRate", 16 / 60, "count/s", "16/min"],
+    ["HKQuantityTypeIdentifierCyclingCadence", 85, "count/min", "85/min"],
+    ["HKQuantityTypeIdentifierWorkoutEffortScore", 7, "appleEffortScore", "7"],
+    ["HKQuantityTypeIdentifierHeadphoneAudioExposure", 72.3, "dBASPL", "72.3 dB"],
     ["HKQuantityTypeIdentifierDietaryVitaminD", 0.00001, "g", "10 mcg"],
     ["HKQuantityTypeIdentifierDietaryMagnesium", 0.35, "g", "350 mg"],
     ["HKQuantityTypeIdentifierDietaryProtein", 82.4, "g", "82.4 g"],

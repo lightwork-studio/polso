@@ -5,10 +5,23 @@ const precise = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 3 });
 // Three significant digits keep small values, such as 0.0004 S, from rounding to zero.
 const number = (n: number) => (Math.abs(n) >= 100 ? whole : precise).format(n);
 
-const DISPLAY_UNITS: Record<string, string> = { "count/min": "bpm", degC: "°C" };
+// Effort scores are plain 1-10 numbers; the others are HealthKit unit strings people don't read.
+const DISPLAY_UNITS: Record<string, string> = { degC: "°C", dBASPL: "dB", appleEffortScore: "" };
 
-/** Formats a quantity read in its HealthKit unit string. */
-export function formatQuantity(quantity: number, unit: string): string {
+const HEART_RATES = new Set([
+  "HKQuantityTypeIdentifierHeartRate",
+  "HKQuantityTypeIdentifierRestingHeartRate",
+  "HKQuantityTypeIdentifierWalkingHeartRateAverage",
+  "HKQuantityTypeIdentifierHeartRateRecoveryOneMinute",
+]);
+
+/** Formats a quantity of the type `id`, read in the HealthKit unit string `unit`. */
+export function formatQuantity(quantity: number, unit: string, id = ""): string {
+  // Rates are read per second or per minute; people know them per minute.
+  if (unit === "count/s" || unit === "count/min") {
+    const perMinute = number(unit === "count/s" ? quantity * 60 : quantity);
+    return HEART_RATES.has(id) ? `${perMinute} bpm` : `${perMinute}/min`;
+  }
   // HealthKit's percent unit runs from 0 to 1.
   if (unit === "%") return `${number(quantity * 100)}%`;
   // Micronutrients are logged in grams but are thousandths or millionths of one.
@@ -17,8 +30,8 @@ export function formatQuantity(quantity: number, unit: string): string {
       ? `${number(quantity * 1e3)} mg`
       : `${number(quantity * 1e6)} mcg`;
   }
-  if (unit === "count") return number(quantity);
-  return `${number(quantity)} ${DISPLAY_UNITS[unit] ?? unit}`;
+  const shown = unit === "count" ? "" : (DISPLAY_UNITS[unit] ?? unit);
+  return shown ? `${number(quantity)} ${shown}` : number(quantity);
 }
 
 /** Names a category value, falling back to the raw number for values the schema doesn't know. */

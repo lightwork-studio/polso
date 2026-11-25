@@ -18,6 +18,7 @@ function introspect(variant: string) {
     {
       cwd: appDir,
       encoding: "utf8",
+      timeout: 60_000,
       env: { ...process.env, POLSO_APP_VARIANT: variant, EXPO_NO_TELEMETRY: "1" },
     },
   );
@@ -28,7 +29,7 @@ function introspect(variant: string) {
   };
 }
 
-describe.each(["development", "production"])(
+describe.each(["development", "preview", "production"])(
   "the %s app's native config",
   (variant) => {
     const ios = introspect(variant);

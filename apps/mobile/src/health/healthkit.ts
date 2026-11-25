@@ -69,7 +69,7 @@ async function latest(type: HealthType): Promise<Preview> {
       if (!sample) return empty;
       return {
         status: "value",
-        text: formatQuantity(sample.quantity, sample.unit),
+        text: formatQuantity(sample.quantity, sample.unit, type.id),
         date: sample.endDate,
       };
     }

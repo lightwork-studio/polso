@@ -39,7 +39,7 @@ describe("asking for access", () => {
     expect(source.requested).toEqual([[steps.id, heartRate.id]]);
   });
 
-  it("reads blood pressure without naming it in the request, through its component types", async () => {
+  it("reads blood pressure without naming it in the request", async () => {
     const bloodPressure: HealthType = {
       id: "HKCorrelationTypeIdentifierBloodPressure",
       kind: "correlation",
@@ -59,7 +59,12 @@ describe("asking for access", () => {
       asked.push([...ids]);
       return true;
     };
-    expect(await needsReadAccess(source, [steps, newType])).toBe(true);
+    const bloodPressure: HealthType = {
+      id: "HKCorrelationTypeIdentifierBloodPressure",
+      kind: "correlation",
+      label: "Blood pressure",
+    };
+    expect(await needsReadAccess(source, [steps, newType, bloodPressure])).toBe(true);
     expect(asked).toEqual([[steps.id]]);
     expect(await needsReadAccess(source, [newType])).toBe(false);
   });
