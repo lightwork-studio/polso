@@ -18,6 +18,21 @@ it("builds the Dev app when no variant is set, as on a fresh checkout", () => {
   });
 });
 
+it("builds the Dev app on its own EAS project and leaves the others unlinked", () => {
+  vi.stubEnv("POLSO_APP_VARIANT", "development");
+  expect(resolveApp()).toMatchObject({
+    owner: "webertim",
+    extra: { eas: { projectId: "e700bfb2-1592-4d37-a382-6055bff6b4b7" } },
+  });
+  // Without projects of their own, the App Store and TestFlight apps must not borrow Dev's.
+  for (const variant of ["preview", "production"]) {
+    vi.stubEnv("POLSO_APP_VARIANT", variant);
+    const app = resolveApp();
+    expect(app.owner).toBeUndefined();
+    expect(app.extra?.eas).toBeUndefined();
+  }
+});
+
 it("gives each variant its own bundle ID so they install side by side", () => {
   const ids = ["development", "preview", "production"].map((variant) => {
     vi.stubEnv("POLSO_APP_VARIANT", variant);
