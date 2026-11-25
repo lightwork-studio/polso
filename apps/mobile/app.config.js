@@ -27,7 +27,7 @@ module.exports = ({ config }) => {
     ios: { ...config.ios, bundleIdentifier },
     ...(projectId && {
       owner: EXPO_OWNER,
-      extra: { ...config.extra, eas: { projectId } },
+      extra: { ...config.extra, eas: { ...config.extra?.eas, projectId } },
     }),
   };
 };

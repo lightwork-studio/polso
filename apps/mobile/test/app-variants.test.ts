@@ -24,6 +24,12 @@ it("builds the Dev app on its own EAS project and leaves the others unlinked", (
     owner: "webertim",
     extra: { eas: { projectId: "e700bfb2-1592-4d37-a382-6055bff6b4b7" } },
   });
+  // Linking keeps whatever else the config carries under extra.
+  const withExtra = { ...base, extra: { keep: 1, eas: { keepToo: 2 } } };
+  expect(resolve({ config: withExtra }).extra).toEqual({
+    keep: 1,
+    eas: { keepToo: 2, projectId: "e700bfb2-1592-4d37-a382-6055bff6b4b7" },
+  });
   // Without projects of their own, the App Store and TestFlight apps must not borrow Dev's.
   for (const variant of ["preview", "production"]) {
     vi.stubEnv("POLSO_APP_VARIANT", variant);

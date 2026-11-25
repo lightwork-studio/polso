@@ -18,6 +18,9 @@ and bundle exports are ignored by Git.
 `POLSO_APP_VARIANT` picks the app identity. Each variant has its own bundle ID, so all three can be
 installed on one phone, each with its own Health permissions.
 
+Only Polso Dev is linked to an EAS project so far (`@webertim/polso-dev`), so EAS builds of the
+TestFlight and App Store apps stop at project linking until they get projects of their own.
+
 | App           | iOS bundle ID          | `POLSO_APP_VARIANT`     |
 | ------------- | ---------------------- | ----------------------- |
 | Polso Dev     | `app.polso.dev`        | `development` (default) |
