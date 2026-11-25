@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+.expo/
+/apps/mobile/ios/
+/apps/mobile/android/
+*.db
+*.db-*
+.data/
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.mobileprovision
+# Real Health exports never belong in the repo
+export.zip
+export.xml
+export_cda.xml

@@ -1,0 +1,19 @@
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "Polso contributors"
+SPDX-License-Identifier = "MPL-2.0"
+
+[[annotations]]
+path = "apps/server/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "Polso contributors"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = ["assets/icon.svg", "assets/brand/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "Polso contributors"
+SPDX-License-Identifier = "LicenseRef-Polso-Brand"

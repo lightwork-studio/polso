@@ -1,0 +1,12 @@
+Polso brand artwork terms
+
+Permission is granted to copy and use the unmodified Polso brand artwork for
+local development and testing, and to identify the official Polso project in
+references. You may also redistribute the unmodified artwork with a source
+fork if you include these terms. Other uses of the artwork require permission
+from its rights holders. This permission does not authorize use of the artwork
+as the identity of a distributed build or hosted service, or any suggestion of
+endorsement.
+
+All other rights in the artwork are reserved. These terms do not restrict uses
+permitted by applicable law or change the terms of third-party materials.
