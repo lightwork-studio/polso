@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Polso Preview",
+    "slug": "polso-preview",
+    "scheme": "polso-preview",
+    "version": "0.1.0",
+    "platforms": ["ios"],
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.polso.preview",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "updates": {
+      "enabled": false
+    }
+  }
+}

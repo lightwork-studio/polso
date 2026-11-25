@@ -3,6 +3,7 @@ dist/
 coverage/
 .expo/
 /apps/mobile/ios/
+/apps/mobile/dist-ios/
 /apps/mobile/android/
 *.db
 *.db-*

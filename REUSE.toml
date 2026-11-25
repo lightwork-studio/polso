@@ -13,7 +13,7 @@ SPDX-FileCopyrightText = "Polso contributors"
 SPDX-License-Identifier = "AGPL-3.0-only"
 
 [[annotations]]
-path = ["assets/icon.svg", "assets/brand/**"]
+path = ["assets/icon.svg", "assets/brand/**", "apps/mobile/assets/*.png"]
 precedence = "closest"
 SPDX-FileCopyrightText = "Polso contributors"
 SPDX-License-Identifier = "LicenseRef-Polso-Brand"
