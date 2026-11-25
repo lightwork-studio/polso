@@ -73,14 +73,23 @@ export function labelFor(id: string): string {
   const words = name
     .replace(/([a-z\d])([A-Z])/g, "$1 $2")
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/([a-z])(\d)/g, "$1 $2")
     .split(" ");
   return words
     .map((word, i) => {
-      if (/^[A-Z\d]{2,}$/.test(word)) return word;
+      // Acronyms (SDNN, VO2) and single letters (vitamin A) keep their capitals.
+      if (/^[A-Z][A-Z\d]*$/.test(word) && (i > 0 || word.length > 1)) return word;
       return i === 0 ? word : word.toLowerCase();
     })
     .join(" ");
 }
+
+/**
+ * Whether Polso names the type in its permission request. Correlations (blood pressure, food)
+ * are left out: HealthKit authorizes them through their component types, such as systolic and
+ * diastolic pressure, which are requested anyway, and it can reject a request that names them.
+ */
+export const isRequested = (type: HealthType): boolean => type.kind !== "correlation";
 
 /** Turns a value name such as "asleepREM" into "Asleep REM". */
 export function valueLabel(name: string): string {
@@ -101,7 +110,8 @@ export const HEALTH_TYPES: readonly HealthType[] = [
       id: q.id,
       kind: "quantity",
       label: labelFor(q.id),
-      ...(q.unit ? { unit: q.unit } : {}),
+      // UV exposure, the one type without a canonical unit in the schema, is an index: a count.
+      unit: q.unit ?? "count",
     }),
   ),
   ...CATEGORY_TYPES.map(

@@ -56,7 +56,8 @@ export function renderHealthTypes(schema: HealthKitSchema): string {
     .filter((c) => !c.legacy)
     .map((c) => {
       const values: Record<string, string> = {};
-      for (const m of enums.get(c.valueEnum)?.members ?? []) values[m.rawValue] = m.name;
+      // When names share a raw value, the first is current and later ones are deprecated aliases.
+      for (const m of enums.get(c.valueEnum)?.members ?? []) values[m.rawValue] ??= m.name;
       return { id: c.name, ios: c.ios, values };
     });
   const json = (value: unknown) => JSON.stringify(value, null, 2);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { HealthType } from "../src/health/catalog";
 import {
   type HealthSource,
+  needsReadAccess,
   type Preview,
   readPreviews,
   requestReadAccess,
@@ -36,6 +37,31 @@ describe("asking for access", () => {
     const source = fakeSource({ missing: [newType.id] });
     await requestReadAccess(source, [steps, newType, heartRate]);
     expect(source.requested).toEqual([[steps.id, heartRate.id]]);
+  });
+
+  it("reads blood pressure without naming it in the request, through its component types", async () => {
+    const bloodPressure: HealthType = {
+      id: "HKCorrelationTypeIdentifierBloodPressure",
+      kind: "correlation",
+      label: "Blood pressure",
+    };
+    const source = fakeSource({});
+    await requestReadAccess(source, [steps, bloodPressure]);
+    expect(source.requested).toEqual([[steps.id]]);
+    const previews = await readPreviews(source, [bloodPressure]);
+    expect(previews.get(bloodPressure.id)).toEqual({ status: "empty" });
+  });
+
+  it("checks whether to ask using the same types it would request", async () => {
+    const asked: string[][] = [];
+    const source = fakeSource({ missing: [newType.id] });
+    source.needsRequest = async (ids) => {
+      asked.push([...ids]);
+      return true;
+    };
+    expect(await needsReadAccess(source, [steps, newType])).toBe(true);
+    expect(asked).toEqual([[steps.id]]);
+    expect(await needsReadAccess(source, [newType])).toBe(false);
   });
 
   it("doesn't show an empty permission sheet", async () => {

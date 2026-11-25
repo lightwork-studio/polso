@@ -1,11 +1,24 @@
 import { type HealthType, valueLabel } from "./catalog";
 
-const numberFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const precise = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 3 });
+// Three significant digits keep small values, such as 0.0004 S, from rounding to zero.
+const number = (n: number) => (Math.abs(n) >= 100 ? whole : precise).format(n);
 
+const DISPLAY_UNITS: Record<string, string> = { "count/min": "bpm", degC: "°C" };
+
+/** Formats a quantity read in its HealthKit unit string. */
 export function formatQuantity(quantity: number, unit: string): string {
-  return unit === "count"
-    ? numberFormat.format(quantity)
-    : `${numberFormat.format(quantity)} ${unit}`;
+  // HealthKit's percent unit runs from 0 to 1.
+  if (unit === "%") return `${number(quantity * 100)}%`;
+  // Micronutrients are logged in grams but are thousandths or millionths of one.
+  if (unit === "g" && quantity !== 0 && Math.abs(quantity) < 1) {
+    return Math.abs(quantity) >= 0.001
+      ? `${number(quantity * 1e3)} mg`
+      : `${number(quantity * 1e6)} mcg`;
+  }
+  if (unit === "count") return number(quantity);
+  return `${number(quantity)} ${DISPLAY_UNITS[unit] ?? unit}`;
 }
 
 /** Names a category value, falling back to the raw number for values the schema doesn't know. */

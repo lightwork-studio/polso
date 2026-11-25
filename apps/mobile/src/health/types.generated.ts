@@ -1119,7 +1119,7 @@ export const CATEGORY_TYPES: readonly GeneratedCategoryType[] = [
     "ios": "9.0",
     "values": {
       "1": "negative",
-      "2": "positive",
+      "2": "luteinizingHormoneSurge",
       "3": "indeterminate",
       "4": "estrogenSurge"
     }
@@ -1241,7 +1241,7 @@ export const CATEGORY_TYPES: readonly GeneratedCategoryType[] = [
     "ios": "8.0",
     "values": {
       "0": "inBed",
-      "1": "asleep",
+      "1": "asleepUnspecified",
       "2": "awake",
       "3": "asleepCore",
       "4": "asleepDeep",

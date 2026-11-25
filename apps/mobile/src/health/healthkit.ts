@@ -47,6 +47,18 @@ function enumValue(names: Record<number, string>, value: number): Preview {
   return value === 0 || !name ? empty : { status: "value", text: valueLabel(name) };
 }
 
+// Blood types read better as "AB+" than as the enum's "abPositive".
+const BLOOD_TYPES: Record<number, string> = {
+  [BloodType.aPositive]: "A+",
+  [BloodType.aNegative]: "A−",
+  [BloodType.bPositive]: "B+",
+  [BloodType.bNegative]: "B−",
+  [BloodType.abPositive]: "AB+",
+  [BloodType.abNegative]: "AB−",
+  [BloodType.oPositive]: "O+",
+  [BloodType.oNegative]: "O−",
+};
+
 async function latest(type: HealthType): Promise<Preview> {
   switch (type.kind) {
     case "quantity": {
@@ -104,7 +116,7 @@ async function characteristic(id: string): Promise<Preview> {
     case "HKCharacteristicTypeIdentifierBiologicalSex":
       return enumValue(BiologicalSex, await getBiologicalSexAsync());
     case "HKCharacteristicTypeIdentifierBloodType":
-      return enumValue(BloodType, await getBloodTypeAsync());
+      return enumValue(BLOOD_TYPES, await getBloodTypeAsync());
     case "HKCharacteristicTypeIdentifierFitzpatrickSkinType":
       return enumValue(FitzpatrickSkinType, await getFitzpatrickSkinTypeAsync());
     case "HKCharacteristicTypeIdentifierWheelchairUse":

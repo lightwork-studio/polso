@@ -1,4 +1,4 @@
-import type { HealthType } from "./catalog";
+import { type HealthType, isRequested } from "./catalog";
 
 /** What Polso shows for one type after reading it. */
 export type Preview =
@@ -36,14 +36,30 @@ export function availableTypes(
 }
 
 /**
- * Shows the permission sheet for every type this iOS version has. Types the system doesn't know
- * are left out, so the request only names types the person can actually grant.
+ * The identifiers Polso names in its permission request: types this iOS version has, without the
+ * ones HealthKit authorizes through other types (see `isRequested`).
  */
+function requestedIds(source: HealthSource, types: readonly HealthType[]): string[] {
+  return availableTypes(source, types)
+    .filter(isRequested)
+    .map((t) => t.id);
+}
+
+/** Whether the permission sheet still has types to ask about. */
+export async function needsReadAccess(
+  source: HealthSource,
+  types: readonly HealthType[],
+): Promise<boolean> {
+  const ids = requestedIds(source, types);
+  return ids.length > 0 && (await source.needsRequest(ids));
+}
+
+/** Shows the permission sheet for the types Polso reads. */
 export async function requestReadAccess(
   source: HealthSource,
   types: readonly HealthType[],
 ): Promise<void> {
-  const ids = availableTypes(source, types).map((t) => t.id);
+  const ids = requestedIds(source, types);
   if (ids.length > 0) await source.requestRead(ids);
 }
 

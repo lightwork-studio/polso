@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,7 +12,7 @@ import { GROUP_ORDER, groupOf, HEALTH_TYPES, type HealthType } from "../src/heal
 import { formatDay } from "../src/health/format";
 import { healthKit } from "../src/health/healthkit";
 import {
-  availableTypes,
+  needsReadAccess,
   type Preview,
   readPreviews,
   requestReadAccess,
@@ -40,25 +40,31 @@ export default function Home() {
     setPhase({ name: "done", previews });
   }, []);
 
+  // One action at a time, so a double tap can't show the permission sheet twice.
+  const busy = useRef(false);
   const run = useCallback(async (action: () => Promise<void>) => {
+    if (busy.current) return;
+    busy.current = true;
     try {
       await action();
     } catch (error) {
       setPhase({ name: "failed", message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      busy.current = false;
     }
   }, []);
 
   useEffect(() => {
     void run(async () => {
       if (!healthKit.isHealthDataAvailable()) return setPhase({ name: "unsupported" });
-      const ids = availableTypes(healthKit, HEALTH_TYPES).map((t) => t.id);
-      if (await healthKit.needsRequest(ids)) return setPhase({ name: "needsAccess" });
+      if (await needsReadAccess(healthKit, HEALTH_TYPES)) return setPhase({ name: "needsAccess" });
       await read();
     });
   }, [read, run]);
 
   const allow = () =>
     run(async () => {
+      setPhase({ name: "checking" });
       await requestReadAccess(healthKit, HEALTH_TYPES);
       await read();
     });

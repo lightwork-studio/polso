@@ -44,15 +44,29 @@ describe("latest values", () => {
       "HKQuantityTypeIdentifierRestingHeartRate",
       "count/min",
     );
-    expect(preview).toEqual({ status: "value", text: "61.5 count/min", date: ended });
+    expect(preview).toEqual({ status: "value", text: "61.5 bpm", date: ended });
   });
 
-  it("lets HealthKit pick the unit when the schema has none", async () => {
+  it("reads UV exposure, which has no canonical unit in the schema, as an index", async () => {
     await healthKit.latest(byId("HKQuantityTypeIdentifierUVExposure"));
     expect(fake.getMostRecentQuantitySample).toHaveBeenCalledWith(
       "HKQuantityTypeIdentifierUVExposure",
-      undefined,
+      "count",
     );
+  });
+
+  it.each([
+    ["HKQuantityTypeIdentifierOxygenSaturation", 0.98, "%", "98%"],
+    ["HKQuantityTypeIdentifierBloodAlcoholContent", 0.0008, "%", "0.08%"],
+    ["HKQuantityTypeIdentifierDietaryVitaminD", 0.00001, "g", "10 mcg"],
+    ["HKQuantityTypeIdentifierDietaryMagnesium", 0.35, "g", "350 mg"],
+    ["HKQuantityTypeIdentifierDietaryProtein", 82.4, "g", "82.4 g"],
+    ["HKQuantityTypeIdentifierElectrodermalActivity", 0.0000043, "S", "0.0000043 S"],
+    ["HKQuantityTypeIdentifierActiveEnergyBurned", 1234.6, "kcal", "1,235 kcal"],
+    ["HKQuantityTypeIdentifierBodyTemperature", 36.6, "degC", "36.6 °C"],
+  ])("shows %s read as %s %s as %s", async (id, quantity, unit, text) => {
+    fake.getMostRecentQuantitySample.mockResolvedValueOnce({ quantity, unit, endDate: ended });
+    expect(await healthKit.latest(byId(id))).toMatchObject({ text });
   });
 
   it("shows counts without a unit", async () => {
@@ -115,7 +129,7 @@ describe("latest values", () => {
     fake.getBloodTypeAsync.mockResolvedValueOnce(fake.BloodType.oNegative);
     expect(await healthKit.latest(byId("HKCharacteristicTypeIdentifierBloodType"))).toEqual({
       status: "value",
-      text: "O negative",
+      text: "O−",
     });
     expect(await healthKit.latest(byId("HKCharacteristicTypeIdentifierBiologicalSex"))).toEqual({
       status: "empty",

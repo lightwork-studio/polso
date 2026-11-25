@@ -5,16 +5,17 @@ import { outputPath, readSchema, renderHealthTypes } from "../scripts/health-typ
 import { HEALTH_TYPES, labelFor, valueLabel } from "../src/health/catalog";
 
 const schema = readSchema();
-const librarySource = (file: string) =>
-  readFileSync(
-    fileURLToPath(
-      new URL(
-        `../node_modules/@kingstinct/react-native-healthkit/src/types/${file}`,
-        import.meta.url,
-      ),
+// The native bridge converts identifiers through this generated switch and throws on any other
+// string, which would reject the whole permission request.
+const bridge = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../node_modules/@kingstinct/react-native-healthkit/nitrogen/generated/shared/c++/ObjectTypeIdentifier.hpp",
+      import.meta.url,
     ),
-    "utf8",
-  );
+  ),
+  "utf8",
+);
 
 describe("the type catalog", () => {
   it("matches the HealthKit schema of the installed library", () => {
@@ -34,18 +35,19 @@ describe("the type catalog", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("uses only identifiers the library knows, so none is silently dropped", () => {
-    const known = ["Constants.ts", "Characteristics.ts", "CorrelationType.ts"]
-      .map(librarySource)
-      .join("\n");
-    const handListed = HEALTH_TYPES.filter((t) => t.kind !== "quantity" && t.kind !== "category");
-    expect(handListed.length).toBe(15);
-    for (const type of handListed) expect(known).toContain(`'${type.id}'`);
+  it("uses only identifiers the native bridge accepts", () => {
+    const accepted = new Set(
+      [...bridge.matchAll(/case hashString\("([^"]+)"\)/g)].map((m) => m[1]),
+    );
+    expect(accepted.size).toBeGreaterThan(200);
+    expect(HEALTH_TYPES.filter((t) => !accepted.has(t.id)).map((t) => t.id)).toEqual([]);
   });
 
   it("keeps the names of category values, such as sleep stages", () => {
     const sleep = HEALTH_TYPES.find((t) => t.id === "HKCategoryTypeIdentifierSleepAnalysis");
     expect(sleep?.values).toMatchObject({ "0": "inBed", "3": "asleepCore", "5": "asleepREM" });
+    // Raw value 1 also has the deprecated alias "asleep"; the current name wins.
+    expect(sleep?.values?.["1"]).toBe("asleepUnspecified");
   });
 });
 
@@ -56,6 +58,8 @@ describe("labels", () => {
     ["HKQuantityTypeIdentifierUVExposure", "UV exposure"],
     ["HKQuantityTypeIdentifierDietaryVitaminB12", "Dietary vitamin B12"],
     ["HKCategoryTypeIdentifierSleepAnalysis", "Sleep analysis"],
+    ["HKQuantityTypeIdentifierDietaryVitaminA", "Dietary vitamin A"],
+    ["HKQuantityTypeIdentifierForcedExpiratoryVolume1", "Forced expiratory volume 1"],
   ])("labels %s as %s", (id, label) => {
     expect(labelFor(id)).toBe(label);
   });
