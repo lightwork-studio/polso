@@ -151,20 +151,46 @@ describe("agent access", () => {
     expect(open(f.servers).map((s) => s.token)).toEqual([access.getState().token]);
   });
 
-  it("stops serving when the old token can't be deleted", async () => {
+  it("overwrites the old token when it can't be deleted", async () => {
     await access.setEnabled(true);
     f.deps.deleteToken.mockRejectedValueOnce(new Error("Keychain unavailable"));
     const old = f.saved();
     await access.regenerate();
+    expect(access.getState()).toMatchObject({ enabled: true, status: { name: "on" } });
+    expect(access.getState().token).not.toBe(old);
+    expect(f.saved()).toBe(access.getState().token);
+    expect(open(f.servers).map((s) => s.token)).toEqual([access.getState().token]);
+  });
+
+  it("never serves the old token when it can be neither deleted nor overwritten", async () => {
+    await access.setEnabled(true);
+    f.deps.deleteToken.mockRejectedValueOnce(new Error("Keychain unavailable"));
+    f.deps.saveToken.mockRejectedValueOnce(new Error("Keychain unavailable"));
+    const old = f.saved();
+    await access.regenerate();
     expect(open(f.servers)).toHaveLength(0);
     expect(access.getState()).toMatchObject({ enabled: false, status: { name: "failed" } });
-    // The old token is still stored, but opening the screen or switching on replaces it.
-    expect(f.saved()).toBe(old);
-    await access.loadToken();
+    expect(f.saved()).toBe(old); // Still stored, but this session won't use it.
+    f.deps.saveToken.mockRejectedValueOnce(new Error("Keychain unavailable"));
+    await access.setEnabled(true);
+    expect(access.getState()).toMatchObject({ enabled: false, status: { name: "failed" } });
     await access.setEnabled(true);
     expect(f.servers.at(-1)?.token).not.toBe(old);
     expect(access.getState().token).not.toBe(old);
     expect(f.saved()).toBe(access.getState().token);
+  });
+
+  it("stops serving when a new token can't be made", async () => {
+    await access.setEnabled(true);
+    f.deps.randomBytes.mockImplementationOnce(() => {
+      throw new Error("No randomness");
+    });
+    await access.regenerate();
+    expect(open(f.servers)).toHaveLength(0);
+    expect(access.getState()).toMatchObject({
+      enabled: false,
+      status: { name: "failed", message: "Couldn't make a new token. No randomness" },
+    });
   });
 
   it("ignores a late failure from a server it already replaced", async () => {

@@ -71,7 +71,8 @@ suspends apps soon after they leave the screen.
   - at most 8 open connections, so anyone on the network can keep agents out for as long as they
     hold them, and a flood of connections can also slow the app down; leaving Polso stops it;
   - requests are answered one at a time. A Health read that times out can't be cancelled, so
-    until it finishes, other requests get 503.
+    until it finishes, other requests get 503. If it never finishes, switch access off and on
+    again.
 - **Plain HTTP:** requests travel unencrypted, so anyone who can watch the network can see the
   token and the answers. Use agent access on your own Wi-Fi, or through Tailscale, which
   encrypts the traffic.

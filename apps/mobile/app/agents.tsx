@@ -48,6 +48,10 @@ export default function Agents() {
       () => setTokenProblem(true),
     );
   }, []);
+  // A token that loads later (say, on switching on) settles an earlier Keychain failure.
+  useEffect(() => {
+    if (token) setTokenProblem(false);
+  }, [token]);
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(undefined), 2000);

@@ -79,8 +79,9 @@ export class AgentAccess {
 
   /**
    * Replaces the token. Serving stops and the old token is deleted first, so it stops working even
-   * if making or saving the new one fails; then a failure switches access off and says why. Until
-   * a new token is saved, the stored one is never used again, even if deleting it failed.
+   * if making or saving the new one fails; then a failure switches access off and says why. Saving
+   * overwrites the stored token, so a failed delete matters only if saving fails too, and until a
+   * new token is saved, this session never uses the stored one again.
    */
   regenerate(): Promise<void> {
     return this.enqueue(async () => {
@@ -88,7 +89,7 @@ export class AgentAccess {
       this.set({ token: undefined });
       this.renewToken = true;
       try {
-        await this.deps.deleteToken();
+        await this.deps.deleteToken().catch(() => undefined);
         await this.token();
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);

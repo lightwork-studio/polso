@@ -198,6 +198,23 @@ describe("listener", () => {
     expect(handle).toHaveBeenCalledTimes(2);
   });
 
+  it("serves again once a slow Health read that timed out fails", async () => {
+    let reject: () => void = () => undefined;
+    handle.mockImplementationOnce(
+      () => new Promise((_, no) => (reject = () => no(new Error("read failed")))),
+    );
+    const a = connect();
+    a.send(request());
+    await vi.advanceTimersByTimeAsync(DEFAULT_LIMITS.handleMs);
+    expect(a.status).toBe(504);
+    reject();
+    await settle();
+    const b = connect();
+    b.send(request());
+    await settle();
+    expect(b.status).toBe(200);
+  });
+
   it("answers a failure with a generic error and keeps serving", async () => {
     handle.mockRejectedValueOnce(new Error("secret detail"));
     const a = connect();
