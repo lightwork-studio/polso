@@ -132,7 +132,9 @@ export default function Agents() {
           <Text style={[styles.note, tokenProblem ? { color: colors.accent } : muted]}>
             {tokenProblem
               ? "Couldn't read the token from the Keychain. Unlock the phone and open this screen again."
-              : "Made when you first switch access on."}
+              : state.status.name === "failed"
+                ? "No token. Switch access on to make a new one."
+                : "Loading…"}
           </Text>
         )}
         <View style={styles.buttons}>

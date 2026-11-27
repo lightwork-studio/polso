@@ -70,15 +70,14 @@ export async function listenTcp(
   const { default: Tcp } = await import("react-native-tcp-socket");
   return new Promise((resolve, reject) => {
     let accept = (socket: Socket) => listener.accept(connectionOf(socket));
-    // Half-open: a client that closes its sending side after the request still gets the answer.
-    const server = Tcp.createServer({ allowHalfOpen: true }, (socket) => accept(socket));
+    const server = Tcp.createServer({}, (socket) => accept(socket));
     let listening = false;
     let closed = false;
     const close = () => {
       if (closed) return;
       closed = true;
       listener.stop();
-      // The stopped listener would close late connections too; this lets go of it and its token.
+      // Late connections are closed here rather than handed to the stopped listener.
       accept = (socket) => socket.destroy();
       // The library can only close a server that is listening. One that is still opening the
       // port is shut down when it gets there.

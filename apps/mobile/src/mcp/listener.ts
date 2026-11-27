@@ -75,6 +75,8 @@ export class Listener {
   private readonly open = new Map<Connection, () => void>();
   private queue: Promise<unknown> = Promise.resolve();
   private stopped = false;
+  /** Health reads that timed out and are still running. */
+  private overdue = 0;
   private readonly limits: Limits;
   private readonly timers: Timers;
 
@@ -147,17 +149,29 @@ export class Listener {
     });
   }
 
-  /** Answers within handleMs, so a Health read that never settles can't hold up the queue. */
+  /**
+   * Answers within handleMs, so a Health read that never settles can't hold up the queue. Reads
+   * can't be cancelled, so while one that timed out still runs, other requests get 503 rather
+   * than starting reads alongside it.
+   */
   private async handle(request: HttpRequest): Promise<HttpResponse> {
+    if (this.overdue > 0) {
+      return plain(503, "Still reading Health data for an earlier request. Try again shortly.");
+    }
     let timer: unknown;
-    const late = new Promise<HttpResponse>((resolve) => {
-      timer = this.timers.setTimeout(
-        () => resolve(plain(504, "Health data took too long to read.")),
-        this.limits.handleMs,
-      );
+    const late = new Promise<undefined>((resolve) => {
+      timer = this.timers.setTimeout(() => resolve(undefined), this.limits.handleMs);
     });
     try {
-      return await Promise.race([this.options.handle(request), late]);
+      const work = this.options.handle(request);
+      const response = await Promise.race([work, late]);
+      if (response) return response;
+      this.overdue += 1;
+      const finished = () => {
+        this.overdue -= 1;
+      };
+      work.then(finished, finished);
+      return plain(504, "Health data took too long to read.");
     } catch {
       return plain(500, "Internal error.");
     } finally {

@@ -154,9 +154,17 @@ describe("agent access", () => {
   it("stops serving when the old token can't be deleted", async () => {
     await access.setEnabled(true);
     f.deps.deleteToken.mockRejectedValueOnce(new Error("Keychain unavailable"));
+    const old = f.saved();
     await access.regenerate();
     expect(open(f.servers)).toHaveLength(0);
     expect(access.getState()).toMatchObject({ enabled: false, status: { name: "failed" } });
+    // The old token is still stored, but opening the screen or switching on replaces it.
+    expect(f.saved()).toBe(old);
+    await access.loadToken();
+    await access.setEnabled(true);
+    expect(f.servers.at(-1)?.token).not.toBe(old);
+    expect(access.getState().token).not.toBe(old);
+    expect(f.saved()).toBe(access.getState().token);
   });
 
   it("ignores a late failure from a server it already replaced", async () => {

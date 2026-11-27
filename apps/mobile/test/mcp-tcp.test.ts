@@ -108,10 +108,9 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("TCP adapter", () => {
-  it("listens on every interface, half-open, and serves connections", async () => {
+  it("listens on every interface and serves connections", async () => {
     await listenTcp(8765, newListener(), vi.fn());
     const server = lastServer();
-    expect(server.options).toEqual({ allowHalfOpen: true });
     expect(server.listenOptions).toEqual({ port: 8765, host: "0.0.0.0", reuseAddress: true });
     const socket = server.connect();
     socket.emit("data", request); // The library can also hand over strings.

@@ -1,8 +1,27 @@
 diff --git a/ios/TcpSockets.m b/ios/TcpSockets.m
-index a5553c66c659a8f582e1e7b1aded0fad87e399c5..4d6b5e95e80d2f70f59e2d7daf559fc21bd30f6b 100644
+index a5553c66c659a8f582e1e7b1aded0fad87e399c5..d344630c3c724cafa98be4d92d3b9d271344dee8 100644
 --- a/ios/TcpSockets.m
 +++ b/ios/TcpSockets.m
-@@ -286,6 +286,16 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
+@@ -19,6 +19,18 @@
+ 
+ RCT_EXPORT_MODULE()
+ 
++// The sockets call back on the main queue (TcpSocketClient's methodQueue) and
++// change _clients there. Without this, the exported methods would run on
++// React Native's own queue and read _clients at the same time, unlocked,
++// which a flood of connections can turn into a crash. One queue for both.
++- (dispatch_queue_t)methodQueue {
++    return dispatch_get_main_queue();
++}
++
+++ (BOOL)requiresMainQueueSetup {
++    return NO;
++}
++
+ - (NSArray<NSString *> *)supportedEvents {
+     return @[
+         @"connect", @"listening", @"connection", @"secureConnection", @"data",
+@@ -286,6 +298,16 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
                    toClient:(NSNumber *)clientID
              connectionType:(NSString *)connectionType {
      GCDAsyncSocket *socket = [client getSocket];
@@ -19,7 +38,7 @@ index a5553c66c659a8f582e1e7b1aded0fad87e399c5..4d6b5e95e80d2f70f59e2d7daf559fc2
  
      [self sendEventWithName:connectionType
                         body:@{
-@@ -293,10 +303,10 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
+@@ -293,10 +315,10 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
                             @"info" : @{
                                 @"id" : client.id,
                                 @"connection" : @{

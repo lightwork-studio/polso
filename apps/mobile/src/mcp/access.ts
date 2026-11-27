@@ -42,6 +42,8 @@ export class AgentAccess {
   private state: AccessState = { enabled: false, status: { name: "off" } };
   private foreground = true;
   private listening?: Listening;
+  /** Set by "New token" until a new one is saved, so the old one is never loaded again. */
+  private renewToken = false;
   private readonly listeners = new Set<() => void>();
   private work: Promise<void> = Promise.resolve();
 
@@ -77,17 +79,17 @@ export class AgentAccess {
 
   /**
    * Replaces the token. Serving stops and the old token is deleted first, so it stops working even
-   * if making or saving the new one fails; then a failure switches access off and says why.
+   * if making or saving the new one fails; then a failure switches access off and says why. Until
+   * a new token is saved, the stored one is never used again, even if deleting it failed.
    */
   regenerate(): Promise<void> {
     return this.enqueue(async () => {
       this.stopServing();
       this.set({ token: undefined });
+      this.renewToken = true;
       try {
         await this.deps.deleteToken();
-        const token = newToken(this.deps.randomBytes);
-        await this.deps.saveToken(token);
-        this.set({ token });
+        await this.token();
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         this.fail(new Error(`Couldn't make a new token. ${reason}`));
@@ -105,11 +107,12 @@ export class AgentAccess {
 
   private async token(): Promise<string> {
     if (this.state.token) return this.state.token;
-    let token = await this.deps.loadToken();
+    let token = this.renewToken ? null : await this.deps.loadToken();
     if (!isUsableToken(token)) {
       token = newToken(this.deps.randomBytes);
       await this.deps.saveToken(token);
     }
+    this.renewToken = false;
     this.set({ token });
     return token;
   }

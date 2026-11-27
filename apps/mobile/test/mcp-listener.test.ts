@@ -176,8 +176,9 @@ describe("listener", () => {
     expect(b.sent).toBeUndefined();
   });
 
-  it("gives up on a Health read that never finishes and serves the next request", async () => {
-    handle.mockImplementationOnce(() => new Promise(() => undefined));
+  it("gives up on a slow Health read, and starts no other until it finishes", async () => {
+    let release: () => void = () => undefined;
+    handle.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve(ok))));
     const [a, b] = [connect(), connect()];
     a.send(request());
     b.send(request());
@@ -185,7 +186,16 @@ describe("listener", () => {
     expect(a.sent).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1);
     expect(a.status).toBe(504);
-    expect(b.status).toBe(200);
+    // The slow read still runs, so reads can't pile up behind it.
+    expect(b.status).toBe(503);
+    expect(handle).toHaveBeenCalledTimes(1);
+    release();
+    await settle();
+    const c = connect();
+    c.send(request());
+    await settle();
+    expect(c.status).toBe(200);
+    expect(handle).toHaveBeenCalledTimes(2);
   });
 
   it("answers a failure with a generic error and keeps serving", async () => {
