@@ -51,12 +51,19 @@ export default function Agents() {
   }, [copied]);
 
   const copy = (what: string, text: string) =>
-    void Clipboard.setStringAsync(text).then(() => setCopied(what));
+    void Clipboard.setStringAsync(text).then(
+      () => setCopied(`Copied the ${what}.`),
+      () => setCopied(`Couldn't copy the ${what}.`),
+    );
 
   const regenerate = () =>
     Alert.alert("Make a new token?", "Agents using the current token lose access.", [
       { text: "Cancel", style: "cancel" },
-      { text: "New token", style: "destructive", onPress: () => void agentAccess.regenerate() },
+      {
+        text: "New token",
+        style: "destructive",
+        onPress: () => void agentAccess.regenerate().catch(() => undefined),
+      },
     ]);
 
   const text = { color: colors.text };
@@ -78,7 +85,7 @@ export default function Agents() {
           accessibilityLabel="Agent access"
           value={state.enabled}
           disabled={status.name === "starting"}
-          onValueChange={(on) => void agentAccess.setEnabled(on)}
+          onValueChange={(on) => void agentAccess.setEnabled(on).catch(() => undefined)}
         />
       </View>
       <Text style={[styles.note, status.name === "failed" ? { color: colors.accent } : muted]}>
@@ -145,7 +152,7 @@ export default function Agents() {
             colors={colors}
           />
         </View>
-        {copied && <Text style={[styles.note, muted]}>Copied the {copied}.</Text>}
+        {copied && <Text style={[styles.note, muted]}>{copied}</Text>}
       </Section>
 
       <Text style={[styles.note, muted]}>

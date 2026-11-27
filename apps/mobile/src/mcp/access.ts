@@ -74,13 +74,22 @@ export class AgentAccess {
     });
   }
 
-  /** Replaces the token. If access is serving, it restarts so only the new token works. */
+  /**
+   * Replaces the token. Serving stops first, so the old token stops working even if making or
+   * saving the new one fails; then a failure switches access off and says why.
+   */
   regenerate(): Promise<void> {
     return this.enqueue(async () => {
-      const token = newToken(this.deps.randomBytes);
-      await this.deps.saveToken(token);
-      this.set({ token });
       this.stopServing();
+      try {
+        const token = newToken(this.deps.randomBytes);
+        await this.deps.saveToken(token);
+        this.set({ token });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        this.fail(new Error(`Couldn't make a new token. ${reason}`));
+        return;
+      }
       await this.reconcile();
     });
   }
@@ -121,8 +130,10 @@ export class AgentAccess {
     try {
       const token = await this.token();
       const listening = await this.deps.listen(token, (error) => {
-        if (this.listening !== listening) return;
-        void this.enqueue(async () => this.fail(error));
+        // Checked again when the task runs: a restart queued before it must not be undone.
+        void this.enqueue(async () => {
+          if (this.listening === listening) this.fail(error);
+        });
       });
       this.listening = listening;
       this.deps.keepAwake(true);

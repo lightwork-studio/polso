@@ -5,6 +5,7 @@ import {
   RequestReader,
   serializeResponse,
 } from "./http";
+import { checkHead, type EndpointOptions, handleHttp } from "./server";
 
 /** One accepted TCP connection, as the listener sees it. The TCP adapter provides it. */
 export interface Connection {
@@ -34,9 +35,16 @@ export interface Limits {
   readonly headMs: number;
   /** Time from connecting until the whole request has arrived. */
   readonly requestMs: number;
+  /** Time to send the answer; a client that stops reading is cut off after it. */
+  readonly sendMs: number;
 }
 
-export const DEFAULT_LIMITS: Limits = { connections: 8, headMs: 5_000, requestMs: 15_000 };
+export const DEFAULT_LIMITS: Limits = {
+  connections: 8,
+  headMs: 5_000,
+  requestMs: 15_000,
+  sendMs: 30_000,
+};
 
 export interface ListenerOptions {
   /** Runs on the head before any body is read: the endpoint's path, origin and token checks. */
@@ -60,7 +68,8 @@ const plain = (status: number, body: string): HttpResponse => ({
  * burst of large Health reads can't pile up on the phone.
  */
 export class Listener {
-  private readonly open = new Set<Connection>();
+  /** Open connections, each with the function that ends its work. */
+  private readonly open = new Map<Connection, () => void>();
   private queue: Promise<unknown> = Promise.resolve();
   private stopped = false;
   private readonly limits: Limits;
@@ -87,19 +96,26 @@ export class Listener {
       connection.endWith(serializeResponse(plain(503, "Busy. Try again shortly.")));
       return;
     }
-    this.open.add(connection);
 
     const reader = new RequestReader(this.options.check);
     let done = false;
-    const timers: unknown[] = [];
+    let timers: unknown[] = [];
+    const clearTimers = () => {
+      for (const t of timers) this.timers.clearTimeout(t);
+      timers = [];
+    };
     const finish = () => {
       done = true;
-      for (const t of timers) this.timers.clearTimeout(t);
+      clearTimers();
     };
+    this.open.set(connection, finish);
     const respond = (response: HttpResponse) => {
       if (done) return;
       finish();
       connection.endWith(serializeResponse(response));
+      if (this.open.has(connection)) {
+        timers.push(this.timers.setTimeout(() => connection.destroy(), this.limits.sendMs));
+      }
     };
     const timeOut = () => respond(plain(408, "The request took too long."));
 
@@ -120,7 +136,7 @@ export class Listener {
       if (result.state === "error") respond(result.response);
       if (result.state !== "complete") return;
       // The request is in; stop the clocks and wait for earlier requests to be answered.
-      for (const t of timers) this.timers.clearTimeout(t);
+      clearTimers();
       const answer = this.queue.then(() =>
         done ? undefined : this.handle(result.request).then(respond),
       );
@@ -139,7 +155,24 @@ export class Listener {
   /** Closes every open connection; connections accepted later are closed at once. */
   stop(): void {
     this.stopped = true;
-    for (const connection of [...this.open]) connection.destroy();
+    const open = [...this.open];
     this.open.clear();
+    for (const [connection, finish] of open) {
+      // Ends its timers and skips its queued request before the socket goes.
+      finish();
+      connection.destroy();
+    }
   }
+}
+
+/**
+ * The listener for the MCP endpoint: every request's head goes through `checkHead` before any of
+ * its body is read, and complete requests go to `handleHttp`.
+ */
+export function endpointListener(options: EndpointOptions, limits?: Limits): Listener {
+  return new Listener({
+    check: (head) => checkHead(head, options.token),
+    handle: (request) => handleHttp(request, options),
+    limits,
+  });
 }

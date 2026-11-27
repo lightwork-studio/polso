@@ -1,0 +1,18 @@
+diff --git a/ios/TcpSockets.m b/ios/TcpSockets.m
+index a5553c66c659a8f582e1e7b1aded0fad87e399c5..b6f678e448ff3710fcc8eadcd813d6394f6f2c5f 100644
+--- a/ios/TcpSockets.m
++++ b/ios/TcpSockets.m
+@@ -286,6 +286,13 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
+                   toClient:(NSNumber *)clientID
+             connectionType:(NSString *)connectionType {
+     GCDAsyncSocket *socket = [client getSocket];
++    // As in onConnect: if the peer went away before this ran, the address
++    // getters return nil and the dictionary below would throw and crash the
++    // app. Drop the connection instead; JS never learned about it.
++    if ([socket localHost] == nil || [socket connectedHost] == nil) {
++        [socket disconnect];
++        return;
++    }
+ 
+     [self sendEventWithName:connectionType
+                        body:@{

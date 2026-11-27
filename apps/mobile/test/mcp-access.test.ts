@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HEALTH_TYPES } from "../src/health/catalog";
 import type { HealthQueries } from "../src/health/queries";
 import { type AccessDeps, AgentAccess } from "../src/mcp/access";
-import { type Connection, Listener } from "../src/mcp/listener";
-import { checkHead, handleHttp } from "../src/mcp/server";
+import { type Connection, endpointListener, type Listener } from "../src/mcp/listener";
 import { decodeUtf8, encodeUtf8 } from "../src/mcp/utf8";
 
 let counter = 0;
@@ -131,6 +130,31 @@ describe("agent access", () => {
     expect(f.deps.keepAwake).toHaveBeenLastCalledWith(false);
   });
 
+  it("stops serving the old token even when the new one can't be saved", async () => {
+    await access.setEnabled(true);
+    const old = access.getState().token;
+    f.deps.saveToken.mockRejectedValueOnce(new Error("Keychain unavailable"));
+    await access.regenerate();
+    expect(open(f.servers)).toHaveLength(0);
+    expect(f.deps.keepAwake).toHaveBeenLastCalledWith(false);
+    expect(access.getState()).toMatchObject({
+      enabled: false,
+      token: old,
+      status: { name: "failed", message: "Couldn't make a new token. Keychain unavailable" },
+    });
+  });
+
+  it("ignores a late failure from a server it already replaced", async () => {
+    await access.setEnabled(true);
+    const first = f.servers[0];
+    const regenerating = access.regenerate();
+    first?.fail(new Error("old server failed")); // Queued behind the regenerate.
+    await regenerating;
+    await access.setForeground(true);
+    expect(access.getState()).toMatchObject({ enabled: true, status: { name: "on" } });
+    expect(open(f.servers)).toHaveLength(1);
+  });
+
   it("switches off when the Keychain can't be read", async () => {
     f.deps.loadToken.mockRejectedValueOnce(new Error("Keychain locked"));
     await access.setEnabled(true);
@@ -152,14 +176,10 @@ describe("agent access end to end", () => {
     let current: Listener | undefined;
     const f = fakeDeps();
     f.deps.listen.mockImplementation(async (token) => {
-      const options = {
+      const listener = endpointListener({
         token,
         server: { name: "polso", version: "0" },
         context: async () => ({ types: HEALTH_TYPES, queries, now: new Date() }),
-      };
-      const listener = new Listener({
-        check: (head) => checkHead(head, token),
-        handle: (request) => handleHttp(request, options),
       });
       current = listener;
       return { close: () => listener.stop() };
@@ -188,6 +208,7 @@ describe("agent access end to end", () => {
 
     await access.setEnabled(true);
     const old = access.getState().token as string;
+    expect(await ask("x".repeat(43))).toBe(401);
     expect(await ask(old)).toBe(200);
     await access.regenerate();
     expect(await ask(old)).toBe(401);

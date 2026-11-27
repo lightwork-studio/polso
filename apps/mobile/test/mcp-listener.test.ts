@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HttpRequest, HttpResponse } from "../src/mcp/http";
-import { type Connection, DEFAULT_LIMITS, Listener } from "../src/mcp/listener";
+import { type Connection, DEFAULT_LIMITS, endpointListener, Listener } from "../src/mcp/listener";
 import { checkHead } from "../src/mcp/server";
 import { decodeUtf8, encodeUtf8 } from "../src/mcp/utf8";
 
@@ -12,6 +12,9 @@ class FakeConnection implements Connection {
   sent?: string;
   destroyed = false;
 
+  /** Like the real library: closing is reported later, and writes after destroy throw. */
+  constructor(private readonly closesLater = false) {}
+
   onData(listener: (chunk: Uint8Array) => void) {
     this.data = listener;
   }
@@ -20,11 +23,16 @@ class FakeConnection implements Connection {
   }
   endWith(bytes: Uint8Array) {
     if (this.sent !== undefined) throw new Error("answered twice");
+    if (this.destroyed) throw new Error("Socket is closed.");
     this.sent = decodeUtf8(bytes);
-    this.closed?.();
+    if (!this.closesLater) this.closed?.();
   }
   destroy() {
     this.destroyed = true;
+    if (!this.closesLater) this.closed?.();
+  }
+  /** The native side reports the close. */
+  reportClosed() {
     this.closed?.();
   }
   send(text: string) {
@@ -48,8 +56,8 @@ const ok: HttpResponse = { status: 200, body: "answer" };
 
 let handle: ReturnType<typeof vi.fn<(r: HttpRequest) => Promise<HttpResponse>>>;
 let listener: Listener;
-const connect = () => {
-  const connection = new FakeConnection();
+const connect = (closesLater = false) => {
+  const connection = new FakeConnection(closesLater);
   listener.accept(connection);
   return connection;
 };
@@ -79,6 +87,20 @@ describe("listener", () => {
     await settle();
     expect(c.status).toBe(401);
     expect(handle).not.toHaveBeenCalled();
+  });
+
+  it("checks the endpoint's token before any body arrives", () => {
+    const endpoint = endpointListener({
+      token: TOKEN,
+      server: { name: "polso", version: "0" },
+      context: async () => {
+        throw new Error("Health data must not be read");
+      },
+    });
+    const c = new FakeConnection();
+    endpoint.accept(c);
+    c.send("POST /mcp HTTP/1.1\r\nAuthorization: Bearer wrong\r\nContent-Length: 10\r\n\r\n");
+    expect(c.status).toBe(401);
   });
 
   it("closes a connection whose head doesn't arrive in time", async () => {
@@ -174,6 +196,48 @@ describe("listener", () => {
     await settle();
     expect(handle).toHaveBeenCalledTimes(1);
     expect(handle.mock.calls[0]?.[0].body).toBe("{}");
+  });
+
+  it("ends a connection's deadlines and queued request when stopped", async () => {
+    let release: () => void = () => undefined;
+    handle.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve(ok))));
+    const [busy, queued, waiting] = [connect(true), connect(true), connect(true)];
+    busy.send(request());
+    queued.send(request());
+    waiting.send("POST /mcp HTTP/1.1\r\n");
+    await settle();
+    listener.stop();
+    // The native close arrives after the deadlines would have fired.
+    await vi.advanceTimersByTimeAsync(DEFAULT_LIMITS.requestMs + 1);
+    release();
+    await settle();
+    expect(handle).toHaveBeenCalledTimes(1);
+    for (const c of [busy, queued, waiting]) {
+      expect(c.destroyed).toBe(true);
+      expect(c.sent).toBeUndefined();
+    }
+  });
+
+  it("cuts off a client that doesn't take its answer", async () => {
+    const c = connect(true);
+    c.send(request());
+    await settle();
+    expect(c.status).toBe(200);
+    await vi.advanceTimersByTimeAsync(DEFAULT_LIMITS.sendMs - 1);
+    expect(c.destroyed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(c.destroyed).toBe(true);
+    c.reportClosed();
+    expect(listener.openConnections).toBe(0);
+  });
+
+  it("doesn't cut off a connection that closed after its answer", async () => {
+    const c = connect(true);
+    c.send(request());
+    await settle();
+    c.reportClosed();
+    await vi.advanceTimersByTimeAsync(DEFAULT_LIMITS.sendMs);
+    expect(c.destroyed).toBe(false);
   });
 
   it("closes open connections when stopped and refuses new ones", async () => {

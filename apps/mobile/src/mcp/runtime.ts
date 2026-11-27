@@ -6,8 +6,8 @@ import { HEALTH_TYPES } from "../health/catalog";
 import { healthKit, healthQueries } from "../health/healthkit";
 import { availableTypes } from "../health/reader";
 import { AgentAccess, MCP_PORT } from "./access";
-import { Listener } from "./listener";
-import { checkHead, type EndpointOptions, handleHttp } from "./server";
+import { endpointListener } from "./listener";
+import type { EndpointOptions } from "./server";
 import { listenTcp } from "./tcp";
 
 const TOKEN_KEY = "polso.agent-access.token";
@@ -27,14 +27,8 @@ export const agentAccess = new AgentAccess({
   loadToken: () => SecureStore.getItemAsync(TOKEN_KEY, keychain),
   saveToken: (token) => SecureStore.setItemAsync(TOKEN_KEY, token, keychain),
   randomBytes: getRandomBytes,
-  listen: (token, onFailure) => {
-    const options: EndpointOptions = { token, server, context };
-    const listener = new Listener({
-      check: (head) => checkHead(head, token),
-      handle: (request) => handleHttp(request, options),
-    });
-    return listenTcp(MCP_PORT, listener, onFailure);
-  },
+  listen: (token, onFailure) =>
+    listenTcp(MCP_PORT, endpointListener({ token, server, context }), onFailure),
   keepAwake: (on) => {
     const change = on
       ? activateKeepAwakeAsync(KEEP_AWAKE_TAG)

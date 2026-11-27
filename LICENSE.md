@@ -4,7 +4,8 @@
   self-hosted server under `apps/server/`.
 - [Mozilla Public License 2.0](LICENSES/MPL-2.0.txt) applies to all other original Polso code
   and documentation, including the iOS app and shared packages.
-- Third-party material keeps its existing license.
+- Third-party material keeps its existing license. The patch to `react-native-tcp-socket` under
+  `patches/` uses that library's [MIT License](LICENSES/MIT.txt).
 - Polso logos, wordmarks, and app icons use the [Polso brand artwork terms](LICENSES/LicenseRef-Polso-Brand.txt)
   and [trademark policy](TRADEMARKS.md).
 
