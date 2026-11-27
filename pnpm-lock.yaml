@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   react-native-tcp-socket@6.4.3:
-    hash: 9c118ef8a5f2a55d26b1d7fc01ba376da6984318c2cb32055c6d853e827e3c25
+    hash: 18d75e6509d02c1b765b6aad96db011a4693b5421b7f2fc94f7752aaf318b03c
     path: patches/react-native-tcp-socket@6.4.3.patch
 
 importers:
@@ -90,7 +90,7 @@ importers:
         version: 4.30.1(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.3)(react@19.3.0))(react@19.3.0)
       react-native-tcp-socket:
         specifier: 6.4.3
-        version: 6.4.3(patch_hash=9c118ef8a5f2a55d26b1d7fc01ba376da6984318c2cb32055c6d853e827e3c25)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.3)(react@19.3.0))
+        version: 6.4.3(patch_hash=18d75e6509d02c1b765b6aad96db011a4693b5421b7f2fc94f7752aaf318b03c)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.3)(react@19.3.0))
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -5987,7 +5987,7 @@ snapshots:
       react-native: 0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.3)(react@19.3.0)
       warn-once: 0.1.1
 
-  react-native-tcp-socket@6.4.3(patch_hash=9c118ef8a5f2a55d26b1d7fc01ba376da6984318c2cb32055c6d853e827e3c25)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.3)(react@19.3.0)):
+  react-native-tcp-socket@6.4.3(patch_hash=18d75e6509d02c1b765b6aad96db011a4693b5421b7f2fc94f7752aaf318b03c)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.3)(react@19.3.0)):
     dependencies:
       buffer: 5.7.1
       eventemitter3: 4.0.7

@@ -161,6 +161,7 @@ const REASONS: Record<number, string> = {
   431: "Request Header Fields Too Large",
   500: "Internal Server Error",
   503: "Service Unavailable",
+  504: "Gateway Timeout",
 };
 
 /** Serializes a response for a connection that closes after it. */

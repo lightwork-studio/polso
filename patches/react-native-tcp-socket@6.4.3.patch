@@ -1,18 +1,34 @@
 diff --git a/ios/TcpSockets.m b/ios/TcpSockets.m
-index a5553c66c659a8f582e1e7b1aded0fad87e399c5..b6f678e448ff3710fcc8eadcd813d6394f6f2c5f 100644
+index a5553c66c659a8f582e1e7b1aded0fad87e399c5..4d6b5e95e80d2f70f59e2d7daf559fc21bd30f6b 100644
 --- a/ios/TcpSockets.m
 +++ b/ios/TcpSockets.m
-@@ -286,6 +286,13 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
+@@ -286,6 +286,16 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
                    toClient:(NSNumber *)clientID
              connectionType:(NSString *)connectionType {
      GCDAsyncSocket *socket = [client getSocket];
 +    // As in onConnect: if the peer went away before this ran, the address
 +    // getters return nil and the dictionary below would throw and crash the
-+    // app. Drop the connection instead; JS never learned about it.
-+    if ([socket localHost] == nil || [socket connectedHost] == nil) {
++    // app. Each getter asks the system again, so read each once, then drop
++    // the connection if either is missing; JS never learned about it.
++    NSString *localAddress = [socket localHost];
++    NSString *remoteAddress = [socket connectedHost];
++    if (localAddress == nil || remoteAddress == nil) {
 +        [socket disconnect];
 +        return;
 +    }
  
      [self sendEventWithName:connectionType
                         body:@{
+@@ -293,10 +303,10 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
+                            @"info" : @{
+                                @"id" : client.id,
+                                @"connection" : @{
+-                                   @"localAddress" : [socket localHost],
++                                   @"localAddress" : localAddress,
+                                    @"localPort" : [NSNumber
+                                        numberWithInt:[socket localPort]],
+-                                   @"remoteAddress" : [socket connectedHost],
++                                   @"remoteAddress" : remoteAddress,
+                                    @"remotePort" : [NSNumber
+                                        numberWithInt:[socket connectedPort]],
+                                    @"remoteFamily" : [socket isIPv4] ? @"IPv4"

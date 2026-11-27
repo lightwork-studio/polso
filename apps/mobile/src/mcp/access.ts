@@ -25,6 +25,7 @@ export interface AccessState {
 export interface AccessDeps {
   loadToken(): Promise<string | null>;
   saveToken(token: string): Promise<void>;
+  deleteToken(): Promise<void>;
   /** A cryptographically secure random source. */
   randomBytes(count: number): Uint8Array;
   /** Starts serving with this token. `onFailure` reports an error after it started. */
@@ -75,13 +76,15 @@ export class AgentAccess {
   }
 
   /**
-   * Replaces the token. Serving stops first, so the old token stops working even if making or
-   * saving the new one fails; then a failure switches access off and says why.
+   * Replaces the token. Serving stops and the old token is deleted first, so it stops working even
+   * if making or saving the new one fails; then a failure switches access off and says why.
    */
   regenerate(): Promise<void> {
     return this.enqueue(async () => {
       this.stopServing();
+      this.set({ token: undefined });
       try {
+        await this.deps.deleteToken();
         const token = newToken(this.deps.randomBytes);
         await this.deps.saveToken(token);
         this.set({ token });

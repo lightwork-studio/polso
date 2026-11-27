@@ -52,19 +52,21 @@ starts, and it serves only while Polso is open and in front. Control Center, Not
 and incoming calls don't count as leaving. The screen stays awake while it serves, because iOS
 suspends apps soon after they leave the screen.
 
-- **Address:** `http://<phone>:8765/mcp` on every network interface, including cellular. The
-  screen shows the Wi-Fi address. Over Tailscale, use the phone's Tailscale address.
+- **Address:** `http://<phone>:8765/mcp` on every network interface, IPv4 and IPv6, including
+  cellular. Where a carrier gives the phone a public IPv6 address, the endpoint is reachable
+  from the internet while it serves; the token still guards it. The screen shows the Wi-Fi
+  address. Over Tailscale, use the phone's Tailscale address.
 - **Token:** every request needs `Authorization: Bearer <token>`. The token is 256 random bits,
   kept in the Keychain on this device only. It's readable only while the phone is unlocked, and
-  a backup restores it only to the same phone. **New token** stops serving at once and locks out
-  every agent that had the old one. Copied tokens stay on the clipboard until something else is
-  copied.
+  a backup restores it only to the same phone. **New token** stops serving and deletes the old
+  token at once, locking out every agent that had it. Copied tokens stay on the clipboard until
+  something else is copied, and Universal Clipboard can pass them to your other Apple devices.
 - **Web pages** can't send the token, and requests that carry an `Origin` header are refused even
   with it, so a site open in a browser can't reach the endpoint.
 - **Limits:**
   - one request per connection, which closes after the answer;
   - the head must arrive within 5 seconds and the whole request within 15;
-  - the answer must be taken within 30 seconds;
+  - Health data must be read within 60 seconds, and the answer taken within 30;
   - at most 8 open connections, so anyone on the network can keep agents out for as long as they
     hold them;
   - requests are answered one at a time.

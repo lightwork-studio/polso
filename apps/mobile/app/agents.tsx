@@ -40,9 +40,13 @@ export default function Agents() {
   const { status, token } = state;
   const url = endpointUrl(useAddress(status.name === "on"));
   const [copied, setCopied] = useState<string>();
+  const [tokenProblem, setTokenProblem] = useState(false);
 
   useEffect(() => {
-    void agentAccess.loadToken().catch(() => undefined);
+    void agentAccess.loadToken().then(
+      () => setTokenProblem(false),
+      () => setTokenProblem(true),
+    );
   }, []);
   useEffect(() => {
     if (!copied) return;
@@ -122,7 +126,15 @@ export default function Agents() {
           Agents send it with every request. Anyone who has it can read your Health data while
           access is on.
         </Text>
-        <Text style={[styles.mono, text]}>{token ? `••••••••${token.slice(-4)}` : "…"}</Text>
+        {token ? (
+          <Text style={[styles.mono, text]}>{`••••••••${token.slice(-4)}`}</Text>
+        ) : (
+          <Text style={[styles.note, tokenProblem ? { color: colors.accent } : muted]}>
+            {tokenProblem
+              ? "Couldn't read the token from the Keychain. Unlock the phone and open this screen again."
+              : "Made when you first switch access on."}
+          </Text>
+        )}
         <View style={styles.buttons}>
           <Button
             label="Copy token"

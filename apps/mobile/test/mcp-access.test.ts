@@ -17,6 +17,9 @@ function fakeDeps(stored: string | null = null) {
     saveToken: vi.fn(async (token: string) => {
       saved = token;
     }),
+    deleteToken: vi.fn(async () => {
+      saved = null;
+    }),
     randomBytes: vi.fn(randomBytes),
     listen: vi.fn(async (token: string, fail: (e: Error) => void) => {
       const server = { token, closed: false, fail };
@@ -139,9 +142,21 @@ describe("agent access", () => {
     expect(f.deps.keepAwake).toHaveBeenLastCalledWith(false);
     expect(access.getState()).toMatchObject({
       enabled: false,
-      token: old,
       status: { name: "failed", message: "Couldn't make a new token. Keychain unavailable" },
     });
+    // The old token is gone, so switching on again makes a new one rather than reviving it.
+    expect(f.saved()).toBeNull();
+    await access.setEnabled(true);
+    expect(access.getState().token).not.toBe(old);
+    expect(open(f.servers).map((s) => s.token)).toEqual([access.getState().token]);
+  });
+
+  it("stops serving when the old token can't be deleted", async () => {
+    await access.setEnabled(true);
+    f.deps.deleteToken.mockRejectedValueOnce(new Error("Keychain unavailable"));
+    await access.regenerate();
+    expect(open(f.servers)).toHaveLength(0);
+    expect(access.getState()).toMatchObject({ enabled: false, status: { name: "failed" } });
   });
 
   it("ignores a late failure from a server it already replaced", async () => {

@@ -128,11 +128,11 @@ describe("listener", () => {
 
   it("gives a slow Health read the time it needs once the request is in", async () => {
     handle.mockImplementationOnce(
-      () => new Promise((resolve) => setTimeout(() => resolve(ok), 60_000)),
+      () => new Promise((resolve) => setTimeout(() => resolve(ok), 45_000)),
     );
     const c = connect();
     c.send(request());
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(45_000);
     expect(c.status).toBe(200);
   });
 
@@ -174,6 +174,18 @@ describe("listener", () => {
     await settle();
     expect(handle).toHaveBeenCalledTimes(1);
     expect(b.sent).toBeUndefined();
+  });
+
+  it("gives up on a Health read that never finishes and serves the next request", async () => {
+    handle.mockImplementationOnce(() => new Promise(() => undefined));
+    const [a, b] = [connect(), connect()];
+    a.send(request());
+    b.send(request());
+    await vi.advanceTimersByTimeAsync(DEFAULT_LIMITS.handleMs - 1);
+    expect(a.sent).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(a.status).toBe(504);
+    expect(b.status).toBe(200);
   });
 
   it("answers a failure with a generic error and keeps serving", async () => {

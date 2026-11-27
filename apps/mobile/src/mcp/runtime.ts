@@ -26,6 +26,7 @@ const context: EndpointOptions["context"] = async () => {
 export const agentAccess = new AgentAccess({
   loadToken: () => SecureStore.getItemAsync(TOKEN_KEY, keychain),
   saveToken: (token) => SecureStore.setItemAsync(TOKEN_KEY, token, keychain),
+  deleteToken: () => SecureStore.deleteItemAsync(TOKEN_KEY, keychain),
   randomBytes: getRandomBytes,
   listen: (token, onFailure) =>
     listenTcp(MCP_PORT, endpointListener({ token, server, context }), onFailure),

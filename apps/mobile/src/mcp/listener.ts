@@ -35,6 +35,8 @@ export interface Limits {
   readonly headMs: number;
   /** Time from connecting until the whole request has arrived. */
   readonly requestMs: number;
+  /** Time to answer a complete request; the next request waits at most this long. */
+  readonly handleMs: number;
   /** Time to send the answer; a client that stops reading is cut off after it. */
   readonly sendMs: number;
 }
@@ -43,6 +45,7 @@ export const DEFAULT_LIMITS: Limits = {
   connections: 8,
   headMs: 5_000,
   requestMs: 15_000,
+  handleMs: 60_000,
   sendMs: 30_000,
 };
 
@@ -144,11 +147,21 @@ export class Listener {
     });
   }
 
+  /** Answers within handleMs, so a Health read that never settles can't hold up the queue. */
   private async handle(request: HttpRequest): Promise<HttpResponse> {
+    let timer: unknown;
+    const late = new Promise<HttpResponse>((resolve) => {
+      timer = this.timers.setTimeout(
+        () => resolve(plain(504, "Health data took too long to read.")),
+        this.limits.handleMs,
+      );
+    });
     try {
-      return await this.options.handle(request);
+      return await Promise.race([this.options.handle(request), late]);
     } catch {
       return plain(500, "Internal error.");
+    } finally {
+      this.timers.clearTimeout(timer);
     }
   }
 
