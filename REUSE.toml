@@ -17,3 +17,9 @@ path = ["assets/icon.svg", "assets/brand/**", "apps/mobile/assets/*.png"]
 precedence = "closest"
 SPDX-FileCopyrightText = "Polso contributors"
 SPDX-License-Identifier = "LicenseRef-Polso-Brand"
+
+[[annotations]]
+path = "patches/react-native-tcp-socket@*.patch"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2019 Rapsssito", "Polso contributors"]
+SPDX-License-Identifier = "MIT"

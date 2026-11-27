@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  SectionList,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from "react-native";
+import { ActivityIndicator, SectionList, StyleSheet, Text, View } from "react-native";
 import { GROUP_ORDER, groupOf, HEALTH_TYPES, type HealthType } from "../src/health/catalog";
 import { formatDay } from "../src/health/format";
 import { healthKit } from "../src/health/healthkit";
@@ -18,6 +10,7 @@ import {
   requestReadAccess,
 } from "../src/health/reader";
 import { previewLabel, summarize } from "../src/health/summary";
+import { Button, type Colors, useColors } from "../src/ui/theme";
 
 type Phase =
   | { name: "checking" }
@@ -28,8 +21,7 @@ type Phase =
   | { name: "failed"; message: string };
 
 export default function Home() {
-  const dark = useColorScheme() === "dark";
-  const colors = dark ? darkColors : lightColors;
+  const colors = useColors();
   const [phase, setPhase] = useState<Phase>({ name: "checking" });
 
   const read = useCallback(async () => {
@@ -163,51 +155,11 @@ function Row({ type, preview, colors }: { type: HealthType; preview?: Preview; c
   );
 }
 
-function Button({
-  label,
-  onPress,
-  colors,
-}: {
-  label: string;
-  onPress: () => void;
-  colors: Colors;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        { backgroundColor: colors.text, opacity: pressed ? 0.7 : 1 },
-      ]}
-    >
-      <Text style={[styles.buttonLabel, { color: colors.background }]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-// The icon's palette: paper, ink and a red dot.
-const lightColors = {
-  background: "#F2EDE4",
-  text: "#1A1A1E",
-  muted: "#6E6A64",
-  separator: "#DDD6CA",
-};
-const darkColors = {
-  background: "#1A1A1E",
-  text: "#F2EDE4",
-  muted: "#9C978F",
-  separator: "#34343A",
-};
-type Colors = typeof lightColors;
-
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", padding: 24, gap: 16 },
   header: { padding: 20, gap: 12 },
   body: { fontSize: 17, lineHeight: 24 },
   note: { fontSize: 14, lineHeight: 20 },
-  button: { alignSelf: "flex-start", borderRadius: 12, paddingHorizontal: 18, paddingVertical: 12 },
-  buttonLabel: { fontSize: 16, fontWeight: "600" },
   sectionTitle: { fontSize: 13, paddingHorizontal: 20, paddingTop: 24, paddingBottom: 6 },
   row: {
     flexDirection: "row",
