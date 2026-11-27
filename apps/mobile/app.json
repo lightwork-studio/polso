@@ -15,7 +15,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "app.polso.preview",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "While you turn on agent access, Polso answers AI agents on your local network."
       }
     },
     "plugins": [

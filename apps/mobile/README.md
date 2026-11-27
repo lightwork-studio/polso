@@ -44,3 +44,27 @@ from "nothing recorded" and shows both as No data.
 The quantity and category types come from the schema in `@kingstinct/react-native-healthkit`.
 After upgrading that library, run `node scripts/health-types.mts` from this directory to refresh
 `src/health/types.generated.ts`; a test fails until you do.
+
+## Agent access
+
+The **Agents** screen switches on the MCP endpoint on the phone. It's off every time Polso
+starts, and it serves only while Polso is open and in front. The screen stays awake while it
+serves, because iOS suspends apps soon after they leave the screen.
+
+- **Address:** `http://<phone>:8765/mcp` on every network interface. The screen shows the Wi-Fi
+  address. Over Tailscale, use the phone's Tailscale address.
+- **Token:** every request needs `Authorization: Bearer <token>`. The token is 256 random bits,
+  kept in the Keychain on this device only. It isn't backed up and is readable only while the
+  phone is unlocked. **New token** locks out every agent that had the old one.
+- **Requests from web pages** carry an `Origin` header and are refused, so a site open in a
+  browser can't reach the endpoint.
+- **Limits:**
+  - one request per connection, which closes after the answer;
+  - the head must arrive within 5 seconds and the whole request within 15;
+  - at most 8 open connections;
+  - requests are answered one at a time.
+- **Plain HTTP:** requests travel unencrypted, so anyone who can watch the network can see the
+  token and the answers. Use agent access on your own Wi-Fi, or through Tailscale, which
+  encrypts the traffic.
+
+To turn it off, flip the switch, or leave Polso. Nothing listens while access is off.

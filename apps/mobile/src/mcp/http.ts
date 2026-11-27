@@ -56,6 +56,11 @@ export class RequestReader {
 
   constructor(private readonly check?: HeadCheck) {}
 
+  /** Whether the head has arrived and passed the check, so only the body is outstanding. */
+  get headRead(): boolean {
+    return this.pending !== undefined;
+  }
+
   push(chunk: Uint8Array): ParseResult {
     if (this.result) return this.result;
     let offset = 0;
@@ -149,6 +154,7 @@ const REASONS: Record<number, string> = {
   403: "Forbidden",
   404: "Not Found",
   405: "Method Not Allowed",
+  408: "Request Timeout",
   411: "Length Required",
   413: "Content Too Large",
   415: "Unsupported Media Type",
