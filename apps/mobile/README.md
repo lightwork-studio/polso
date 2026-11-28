@@ -81,3 +81,29 @@ To turn it off, flip the switch, or leave Polso. Nothing listens while access is
 
 The TCP server comes from `react-native-tcp-socket`, with a patch in `patches/` that stops a
 connection reset at the wrong moment, or a flood of connections, from crashing the app.
+
+## Your server
+
+The **Server** screen pairs Polso with a [Polso server](../server/README.md) you run, which keeps
+a copy of your Health data so agents can read it around the clock. The
+[sync protocol](../../docs/sync-protocol.md) has the details.
+
+- **Pairing:** open a link from `polso-server admin pair` on the iPhone, or copy it and tap
+  **Paste pairing link**. Polso shows the server's name and pairs only when you confirm, and only
+  with https servers: anyone can make a pairing link, so check it's your server. Pairing again
+  replaces the earlier server.
+- **What's sent:** every quantity and category record and every workout Polso can read, as the
+  phone's own MCP endpoint reports them, plus HealthKit's daily statistics, your profile values
+  and your time zone. Deletions in Health are passed on. The first sync sends your whole
+  history, in batches of 1,000 records.
+- **When:** whenever Polso opens or comes to the front. A sync that stops partway (no network,
+  Polso closed) resumes where it stopped: each type's position moves on only after the server
+  accepted a batch.
+- **Kept on the phone:** the server's address and this phone's token in the Keychain, readable
+  after the phone's first unlock and never restored to another device. Each type's position is
+  kept in a file in Polso's documents.
+- **Send everything again** erases the server's copy and sends the whole history. **Unpair**
+  forgets the server; **Erase its copy and unpair** asks the server to delete its copy first
+  and keeps the pairing if it can't. A phone that loses its positions, after a reinstall say,
+  erases the server's copy and sends everything again, since HealthKit can't tell it what was
+  deleted meanwhile.

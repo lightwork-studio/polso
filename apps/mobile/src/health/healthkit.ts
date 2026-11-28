@@ -18,13 +18,16 @@ import {
   type ObjectTypeIdentifier,
   type QuantityTypeIdentifier,
   queryCategorySamples,
+  queryCategorySamplesWithAnchor,
   queryCorrelationSamples,
   queryElectrocardiogramSamples,
   queryHeartbeatSeriesSamples,
   queryQuantitySamples,
+  queryQuantitySamplesWithAnchor,
   queryStateOfMindSamples,
   queryStatisticsCollectionForQuantity,
   queryWorkoutSamples,
+  queryWorkoutSamplesWithAnchor,
   requestAuthorization,
   WheelchairUse,
   WorkoutActivityType,
@@ -44,7 +47,8 @@ import {
   type SampleRecord,
   type Statistic,
 } from "@polso/mcp/health/queries";
-import type { HealthSource, Preview } from "./reader";
+import type { SyncSource } from "../sync/engine";
+import { availableTypes, type HealthSource, type Preview } from "./reader";
 
 // The catalog holds plain strings; HealthKit's identifier types are unions of the same strings.
 const asIds = (ids: readonly string[]) => ids as readonly ObjectTypeIdentifier[];
@@ -266,4 +270,130 @@ export const healthQueries: HealthQueries = {
     const preview = await characteristic(type.id);
     return preview.status === "value" ? preview.text : undefined;
   },
+};
+
+// --- Reads behind sync to a server ---
+
+/*
+ * HealthKit as sync reads it: anchored queries for what changed, and HealthKit's own daily
+ * statistics. Records are shaped exactly as the phone's MCP endpoint reports them (units, value
+ * names, sources), so the server answers agents the same way.
+ */
+
+const SYNCED_KINDS = new Set(["quantity", "category", "workout"]);
+const iso = (date: Date) => date.toISOString();
+
+const nextDay = (day: string) => {
+  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
+  return new Date(y, m - 1, d + 1);
+};
+const startOf = (day: string) => {
+  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
+  return new Date(y, m - 1, d);
+};
+
+export const healthKitSync: SyncSource = {
+  async types() {
+    return availableTypes(healthKit, HEALTH_TYPES).filter((t) => SYNCED_KINDS.has(t.kind));
+  },
+
+  async changes(type: HealthType, anchor, limit) {
+    const options = { limit, ...(anchor !== undefined && { anchor }) };
+    if (type.kind === "quantity") {
+      const unit = agentUnit(type);
+      const result = await queryQuantitySamplesWithAnchor(type.id as QuantityTypeIdentifier, {
+        ...options,
+        unit: unit as never,
+      });
+      return {
+        samples: result.samples.map((s) => ({
+          id: s.uuid,
+          type: type.id,
+          start: iso(s.startDate),
+          end: iso(s.endDate),
+          value: agentValue(s.quantity, s.unit),
+          unit: s.unit,
+          source: sourceName(s),
+        })),
+        workouts: [],
+        deleted: result.deletedSamples.map((d) => d.uuid),
+        anchor: result.newAnchor,
+      };
+    }
+    if (type.kind === "category") {
+      const result = await queryCategorySamplesWithAnchor(
+        type.id as CategoryTypeIdentifier,
+        options,
+      );
+      return {
+        samples: result.samples.map((s) => ({
+          id: s.uuid,
+          type: type.id,
+          start: iso(s.startDate),
+          end: iso(s.endDate),
+          value: categoryValue(type, Number(s.value)),
+          source: sourceName(s),
+        })),
+        workouts: [],
+        deleted: result.deletedSamples.map((d) => d.uuid),
+        anchor: result.newAnchor,
+      };
+    }
+    const result = await queryWorkoutSamplesWithAnchor(options);
+    return {
+      samples: [],
+      workouts: result.workouts.map((w) => ({
+        id: w.uuid,
+        activity: WorkoutActivityType[w.workoutActivityType] ?? "other",
+        start: iso(w.startDate),
+        end: iso(w.endDate),
+        durationMinutes: w.duration.quantity / 60,
+        ...(w.totalEnergyBurned && {
+          energy: { value: w.totalEnergyBurned.quantity, unit: w.totalEnergyBurned.unit },
+        }),
+        ...(w.totalDistance && {
+          distance: { value: w.totalDistance.quantity, unit: w.totalDistance.unit },
+        }),
+        source: sourceName(w),
+      })),
+      deleted: result.deletedSamples.map((d) => d.uuid),
+      anchor: result.newAnchor,
+    };
+  },
+
+  async dailyStats(type, statistic, from, to) {
+    const start = startOf(from);
+    const rows = await queryStatisticsCollectionForQuantity(
+      type.id as QuantityTypeIdentifier,
+      [STATISTIC_OPTION[statistic]],
+      startOfDay(start),
+      { day: 1 },
+      {
+        filter: { date: { startDate: start, endDate: nextDay(to) } },
+        unit: agentUnit(type) as never,
+      },
+    );
+    return rows.flatMap((row) => {
+      const quantity = row[STATISTIC_FIELD[statistic]];
+      if (!quantity || !row.startDate) return [];
+      const day = formatDay(row.startDate);
+      if (day < from || day > to) return [];
+      return [{ day, value: agentValue(quantity.quantity, quantity.unit) }];
+    });
+  },
+
+  async characteristics() {
+    const values: Record<string, string | null> = {};
+    for (const type of HEALTH_TYPES.filter((t) => t.kind === "characteristic")) {
+      try {
+        values[type.id] = (await healthQueries.characteristic(type)) ?? null;
+      } catch {
+        // Not readable (not allowed, or not on this iOS version): leave it out.
+      }
+    }
+    return values;
+  },
+
+  timeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+  dayOf: formatDay,
 };

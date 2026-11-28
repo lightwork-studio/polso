@@ -73,7 +73,11 @@ describe("app source", () => {
 
   it("uses no HealthKit call that writes, deletes or enables background delivery", () => {
     const adapter = readFileSync(join(appDir, "src/health/healthkit.ts"), "utf8");
-    expect(adapter).not.toMatch(/\b(save\w*|delete\w*|\w*BackgroundDelivery|\w*BackgroundTypes)\b/);
+    // "deleted" and "deletedSamples" are what anchored queries report as deleted: read, not a
+    // deletion.
+    expect(adapter).not.toMatch(
+      /\b(save\w*|delete(?!d(Samples)?\b)\w*|\w*BackgroundDelivery|\w*BackgroundTypes)\b/,
+    );
     expect(adapter).not.toMatch(/\btoShare\b/);
   });
 });
