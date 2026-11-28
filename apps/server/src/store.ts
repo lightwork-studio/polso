@@ -66,7 +66,24 @@ export const MIGRATIONS: readonly string[] = [
     value TEXT NOT NULL
   );
   `,
+  // 2: agent tokens for the MCP endpoint.
+  `
+  CREATE TABLE agents (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+  );
+  `,
 ];
+
+export interface Agent {
+  readonly id: number;
+  readonly name: string;
+  readonly createdAt: Date;
+  readonly lastUsedAt?: Date;
+}
 
 export interface Device {
   readonly id: number;
@@ -271,6 +288,54 @@ export class Store {
       this.db.exec("DELETE FROM pairing_codes");
       return Number(this.db.prepare("DELETE FROM devices").run().changes);
     });
+  }
+
+  // --- Agents ---
+
+  /** Adds an agent with the hash of its token. Returns its id. */
+  addAgent(name: string, tokenHash: string, now: Date): number {
+    const result = this.db
+      .prepare("INSERT INTO agents (name, token_hash, created_at) VALUES (?, ?, ?)")
+      .run(name, tokenHash, now.getTime());
+    return Number(result.lastInsertRowid);
+  }
+
+  /** Whether an agent holds this token hash. Notes when it was last used. */
+  agentFor(tokenHash: string, now: Date): boolean {
+    const row = this.db
+      .prepare("SELECT id, last_used_at FROM agents WHERE token_hash = ?")
+      .get(tokenHash) as { id: number; last_used_at: number | null } | undefined;
+    if (!row) return false;
+    if (row.last_used_at === null || now.getTime() - row.last_used_at >= LAST_SEEN_EVERY_MS) {
+      this.db.prepare("UPDATE agents SET last_used_at = ? WHERE id = ?").run(now.getTime(), row.id);
+    }
+    return true;
+  }
+
+  agents(): Agent[] {
+    const rows = this.db
+      .prepare("SELECT id, name, created_at, last_used_at FROM agents ORDER BY id")
+      .all() as unknown as {
+      id: number;
+      name: string;
+      created_at: number;
+      last_used_at: number | null;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      createdAt: new Date(row.created_at),
+      ...(row.last_used_at !== null && { lastUsedAt: new Date(row.last_used_at) }),
+    }));
+  }
+
+  /** Removes one agent's token, or every agent's when `id` is undefined. Returns how many. */
+  revokeAgent(id?: number): number {
+    const result =
+      id === undefined
+        ? this.db.prepare("DELETE FROM agents").run()
+        : this.db.prepare("DELETE FROM agents WHERE id = ?").run(id);
+    return Number(result.changes);
   }
 
   // --- Health data ---

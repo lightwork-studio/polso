@@ -1,6 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { HttpHead, HttpResponse } from "@polso/mcp/http";
+import { checkHead, handleHttp, MCP_PATH } from "@polso/mcp/server";
 import { ChangesError, parseChanges } from "./changes.ts";
 import { PAIR_PAGE, PAIR_PAGE_CSP } from "./pair-page.ts";
+import { toolContext } from "./queries.ts";
 import { isBusy, type Store } from "./store.ts";
 import { hashSecret, looksLikeSecret, newSecret } from "./tokens.ts";
 
@@ -8,6 +11,10 @@ import { hashSecret, looksLikeSecret, newSecret } from "./tokens.ts";
 export const MAX_BODY_BYTES = 8 * 1024 * 1024;
 /** Largest body before a device is known: pairing needs a code and a name. */
 export const MAX_PAIRING_BYTES = 4 * 1024;
+/** Largest MCP message an agent may send; tool calls are small. */
+export const MAX_MCP_BYTES = 64 * 1024;
+/** What the server calls itself to agents. */
+const SERVER_INFO = { name: "polso", version: "0.0.0" };
 /** Open connections at once; one person's phones need a handful. */
 export const MAX_CONNECTIONS = 64;
 /** How long a connection may stay silent, in either direction, before it is closed. */
@@ -60,6 +67,16 @@ async function readJson(request: IncomingMessage, limit: number): Promise<unknow
   if (!/^application\/json(\s*;|$)/i.test(type)) {
     throw new HttpError(415, "Send the body as application/json.");
   }
+  const body = await readBody(request, limit);
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new HttpError(400, "The body isn't valid JSON.");
+  }
+}
+
+/** Reads a body as text, stopping as soon as it passes `limit` bytes. */
+async function readBody(request: IncomingMessage, limit: number): Promise<string> {
   const declared = Number(request.headers["content-length"]);
   if (declared > limit) throw new HttpError(413, "The body is too large.");
   // Plain listeners rather than for-await: leaving that loop early would destroy the request,
@@ -100,11 +117,21 @@ async function readJson(request: IncomingMessage, limit: number): Promise<unknow
     request.on("error", onError);
     request.on("close", onClose);
   });
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch {
-    throw new HttpError(400, "The body isn't valid JSON.");
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** A request's head as the shared MCP code reads it: lower-case names, repeats joined. */
+function headOf(request: IncomingMessage, path: string): HttpHead {
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (value !== undefined) headers[name] = Array.isArray(value) ? value.join(", ") : value;
   }
+  return { method: request.method ?? "GET", path, headers };
+}
+
+function answer(response: ServerResponse, result: HttpResponse): void {
+  response.writeHead(result.status, { ...result.headers, "Cache-Control": "no-store" });
+  response.end(result.body);
 }
 
 function bearer(request: IncomingMessage): string | undefined {
@@ -175,12 +202,39 @@ export function createSyncServer(options: ServerOptions): Server {
     send(response, 200, { ok: true, generation: store.generation() });
   }
 
+  /** Whether a bearer token belongs to one of the agents the operator added. */
+  const isAgent = (token: string) =>
+    looksLikeSecret(token) && store.agentFor(hashSecret(token), now());
+
+  /**
+   * The MCP endpoint for agents: the phone's six read-only tools, answered from the stored copy.
+   * The token is checked on the head, before any body is read.
+   */
+  async function mcp(request: IncomingMessage, response: ServerResponse, path: string) {
+    const head = headOf(request, path);
+    const refused = checkHead(head, isAgent);
+    if (refused) {
+      answer(response, refused);
+      return;
+    }
+    const body = request.method === "POST" ? await readBody(request, MAX_MCP_BYTES) : "";
+    const result = await handleHttp(
+      { ...head, body },
+      { token: isAgent, server: SERVER_INFO, context: async () => toolContext(store) },
+    );
+    answer(response, result);
+  }
+
   async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
     let path: string;
     try {
       path = new URL(request.url ?? "/", "http://server").pathname;
     } catch {
       throw new HttpError(400, "That isn't a request target the server understands.");
+    }
+    if (path === MCP_PATH) {
+      await mcp(request, response, path);
+      return;
     }
     // Web pages can't reach the API with someone's token: browsers send Origin, phones don't.
     if (path.startsWith("/sync/") && request.headers.origin !== undefined) {

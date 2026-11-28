@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { parseChanges } from "../src/changes.ts";
-import { DATABASE_FILE, Store } from "../src/store.ts";
+import { DATABASE_FILE, MIGRATIONS, Store } from "../src/store.ts";
 import { heartRate, run, tempDirectory, tempStore, UUID } from "./support.ts";
 
 const NOW = new Date("2026-11-27T12:00:00.000Z");
@@ -15,7 +15,7 @@ describe("store", () => {
     const path = join(directory, DATABASE_FILE);
     Store.open(path).close();
     const raw = new DatabaseSync(path);
-    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
+    expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length });
     raw.exec("PRAGMA user_version = 99");
     raw.close();
     expect(() => Store.open(path)).toThrow("newer Polso server");
@@ -145,5 +145,35 @@ describe("pairing and devices", () => {
     expect(store.deviceFor("t2", NOW)).toBeDefined();
     expect(store.revoke()).toBe(1);
     expect(store.deviceFor("t2", NOW)).toBeUndefined();
+  });
+});
+
+describe("upgrading", () => {
+  it("keeps a schema-1 database's data and devices when it gains agent tokens", () => {
+    const path = join(tempDirectory(), DATABASE_FILE);
+    // A database as the first server version left it, with a device and Health data.
+    const old = new DatabaseSync(path);
+    old.exec("PRAGMA journal_mode = WAL");
+    old.exec(MIGRATIONS[0] as string);
+    old.exec("PRAGMA user_version = 1");
+    old
+      .prepare("INSERT INTO devices (name, token_hash, paired_at) VALUES (?, ?, ?)")
+      .run("iPhone", "hash", NOW.getTime());
+    old
+      .prepare(
+        "INSERT INTO samples (id, type, start_ms, end_ms, number_value, unit, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(UUID(1), "HKQuantityTypeIdentifierHeartRate", 1, 2, 61, "count/min", "Watch");
+    old.prepare("INSERT INTO settings (key, value) VALUES ('generation', 'g1')").run();
+    old.close();
+
+    const store = Store.open(path);
+    expect(store.counts().samples).toBe(1);
+    expect(store.devices().map((d) => d.name)).toEqual(["iPhone"]);
+    expect(store.generation()).toBe("g1");
+    expect(store.agents()).toEqual([]);
+    store.addAgent("Claude", "agent-hash", NOW);
+    expect(store.agentFor("agent-hash", NOW)).toBe(true);
+    store.close();
   });
 });
