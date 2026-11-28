@@ -111,7 +111,10 @@ function finite(value: unknown, where: string): number {
 function instant(value: unknown, where: string): Date {
   const s = matching(value, INSTANT, where, "a UTC time such as 2026-11-27T07:01:00.000Z");
   const date = new Date(s);
-  if (Number.isNaN(date.getTime())) fail(where, "not a valid time");
+  // Rejects times that don't exist, such as 2026-02-30T00:00:00Z, which Date would roll over.
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 19) !== s.slice(0, 19)) {
+    fail(where, "not a valid time");
+  }
   return date;
 }
 

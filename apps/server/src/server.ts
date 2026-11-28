@@ -10,10 +10,14 @@ export const MAX_BODY_BYTES = 8 * 1024 * 1024;
 export const MAX_PAIRING_BYTES = 4 * 1024;
 /** Open connections at once; one person's phones need a handful. */
 export const MAX_CONNECTIONS = 64;
+/** How long a connection may stay silent, in either direction, before it is closed. */
+export const IDLE_TIMEOUT_MS = 15_000;
 const MAX_DEVICE_NAME = 100;
 
 export interface ServerOptions {
   readonly store: Store;
+  /** Overrides IDLE_TIMEOUT_MS, for tests. */
+  readonly idleTimeoutMs?: number;
   /** When false, pairing answers 403 and paired devices keep syncing. */
   readonly pairing?: boolean;
   readonly now?: () => Date;
@@ -172,7 +176,12 @@ export function createSyncServer(options: ServerOptions): Server {
   }
 
   async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const path = new URL(request.url ?? "/", "http://server").pathname;
+    let path: string;
+    try {
+      path = new URL(request.url ?? "/", "http://server").pathname;
+    } catch {
+      throw new HttpError(400, "That isn't a request target the server understands.");
+    }
     // Web pages can't reach the API with someone's token: browsers send Origin, phones don't.
     if (path.startsWith("/sync/") && request.headers.origin !== undefined) {
       throw new HttpError(403, "Requests from web pages aren't accepted.");
@@ -236,5 +245,9 @@ export function createSyncServer(options: ServerOptions): Server {
   server.headersTimeout = 10_000;
   server.requestTimeout = 60_000;
   server.maxConnections = MAX_CONNECTIONS;
+  // A connection that sends nothing for this long is closed. The request timeouts only start
+  // with a request's first bytes, so without this, idle connections could fill the cap above
+  // and lock the phone out.
+  server.setTimeout(options.idleTimeoutMs ?? IDLE_TIMEOUT_MS);
   return server;
 }

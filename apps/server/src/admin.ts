@@ -7,7 +7,7 @@ export const ADMIN_USAGE = `Usage: polso-server admin <command>
   pair                    one-time pairing link for a phone, valid 15 minutes
   devices list            paired phones and when each was last seen
   devices revoke <id>     unpair one phone; its token stops working at once
-  devices revoke --all    unpair every phone
+  devices revoke --all    unpair every phone and cancel unused pairing links
   status                  how much Health data the server holds
   erase --yes             delete every copied Health record (phones stay paired)
 

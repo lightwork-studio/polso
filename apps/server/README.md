@@ -47,15 +47,16 @@ start while the first runs. Keep the data directory on a local disk.
 ## Pair a phone and manage the data
 
 `polso-server admin` works on the same database while the server runs. Run it as the server's
-user, with the same `POLSO_DATA`. It uses the public address and pairing setting the server
-started with. It refuses to run where there's no database, so a mistyped `POLSO_DATA` can't
-report success while doing nothing:
+user, with the same `POLSO_DATA`. It uses the public address and pairing setting the server last
+started with, unless you set them for the command. It refuses to run where there's no database,
+so a mistyped `POLSO_DATA` can't report success while doing nothing, and it leaves schema
+changes to the server: after an upgrade, restart the server before running admin commands.
 
 ```sh
 polso-server admin pair                  # one-time pairing link, valid 15 minutes
 polso-server admin devices list          # paired phones and when each was last seen
 polso-server admin devices revoke <id>   # unpair one phone; its token stops working at once
-polso-server admin devices revoke --all  # the off switch: every phone
+polso-server admin devices revoke --all  # the off switch: every phone, and unused links
 polso-server admin status                # how much Health data the server holds
 polso-server admin erase --yes           # delete every copied Health record
 ```

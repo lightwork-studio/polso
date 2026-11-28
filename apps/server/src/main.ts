@@ -1,7 +1,7 @@
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ADMIN_USAGE, runAdmin, UsageError } from "./admin.ts";
 import { type Config, ConfigError, readConfig } from "./config.ts";
+import { prepareDirectory } from "./files.ts";
 import { LockedError, lockDataDirectory } from "./lock.ts";
 import { createSyncServer } from "./server.ts";
 import { DATABASE_FILE, MissingDatabaseError, Store } from "./store.ts";
@@ -13,26 +13,10 @@ import { DATABASE_FILE, MissingDatabaseError, Store } from "./store.ts";
  *   polso-server admin <command>  pairs phones and manages the data (see ADMIN_USAGE)
  */
 
-/**
- * Everything the server writes is for its own user only: new files through the umask, and a
- * directory or database that already existed (copied in, say) is tightened when the server
- * starts. (Windows ignores these modes.)
- */
-function prepareDirectory(config: Config, tighten: boolean): void {
-  process.umask(process.umask() | 0o077);
-  mkdirSync(config.directory, { recursive: true, mode: 0o700 });
-  if (!tighten) return;
-  chmodSync(config.directory, 0o700);
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const file = join(config.directory, DATABASE_FILE + suffix);
-    if (existsSync(file)) chmodSync(file, 0o600);
-  }
-}
-
 const databasePath = (config: Config) => join(config.directory, DATABASE_FILE);
 
 function serve(config: Config): void {
-  prepareDirectory(config, true);
+  prepareDirectory(config.directory);
   // Taken before the database opens, so two servers never migrate it at once.
   const unlock = lockDataDirectory(config.directory);
   let store: Store;
@@ -56,7 +40,9 @@ function serve(config: Config): void {
       console.warn("It listens beyond this machine over plain HTTP: put HTTPS in front of it.");
     }
     if (!config.publicUrl) {
-      console.warn("POLSO_PUBLIC_URL isn't set, so `admin pair` can't make pairing links yet.");
+      console.warn(
+        "POLSO_PUBLIC_URL isn't set: `admin pair` uses the address recorded earlier, if any.",
+      );
     }
   });
   const stop = () => {
@@ -81,7 +67,7 @@ function main(argv: readonly string[]): number {
     }
     if (command === "admin") {
       // Only an existing database: a mistyped POLSO_DATA must not erase or revoke nothing.
-      const store = Store.open(databasePath(config), { create: false });
+      const store = Store.open(databasePath(config), { create: false, migrate: false });
       try {
         console.log(runAdmin(rest, store, config));
       } finally {
@@ -101,6 +87,11 @@ function main(argv: readonly string[]): number {
       return 2;
     }
     if (error instanceof LockedError) {
+      console.error(error.message);
+      return 1;
+    }
+    // Anything else (the database busy for too long, say): the message, not a stack trace.
+    if (command === "admin" && error instanceof Error) {
       console.error(error.message);
       return 1;
     }

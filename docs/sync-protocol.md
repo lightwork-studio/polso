@@ -22,7 +22,9 @@ Content-Type: application/json
 ```
 
 `200` answers `{ "token": "<device token>" }`. The phone keeps the token in its Keychain and sends
-it as `Authorization: Bearer <token>` from then on. A wrong, used or expired code gets `401`.
+it as `Authorization: Bearer <token>` from then on. A wrong, used or expired code gets `401`, and
+`403` means the operator has switched pairing off. Every request with a body sends it as
+`application/json`; anything else gets `415`.
 
 Codes and device tokens are 32 random bytes in base64url. The server stores only their SHA-256
 hashes. Revoking a device (`polso-server admin devices revoke`) makes its token fail at once,
@@ -33,8 +35,9 @@ one, so a link could point the phone at a stranger's server. Before it pairs, th
 server's host name and asks the person to confirm, and it accepts only `https` servers. The page
 hands the code to the app through its link scheme (`polso://`, or `polso-preview://` and
 `polso-dev://` for test builds). Another app on the phone could register the same scheme and take
-the code. It could then send data to the server, but it can't read any, and the real phone's
-pairing would fail, which shows. Make a new link and revoke the stray device if that happens.
+the code. It could then send, change or erase the server's data, but not read it, and the real
+phone's pairing would fail, which shows. If that happens, revoke every device
+(`polso-server admin devices revoke --all`, which also cancels unused links) and pair again.
 
 ## Changes
 

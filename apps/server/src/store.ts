@@ -136,7 +136,7 @@ export class Store {
    * Opens the database and brings its schema up to date. The server creates it; admin commands
    * pass `create: false`, so a mistyped data directory fails instead of acting on an empty one.
    */
-  static open(path: string, options: { create?: boolean } = {}): Store {
+  static open(path: string, options: { create?: boolean; migrate?: boolean } = {}): Store {
     if (options.create === false && !existsSync(path)) {
       throw new MissingDatabaseError(
         `No Polso database at ${path}. Set POLSO_DATA to the server's data directory.`,
@@ -151,7 +151,17 @@ export class Store {
       // Deleted Health records are overwritten in the file, not just unlinked.
       db.exec("PRAGMA synchronous = FULL; PRAGMA secure_delete = ON");
       const store = new Store(db);
-      store.migrate();
+      if (options.migrate === false) {
+        // Admin commands leave migrating to the server, which holds the data directory's lock:
+        // a new binary's admin command mustn't change the schema under the old running server.
+        if (store.version() < MIGRATIONS.length) {
+          throw new MissingDatabaseError(
+            "The database needs the new server version's changes. Restart the server first.",
+          );
+        }
+      } else {
+        store.migrate();
+      }
       return store;
     } catch (error) {
       db.close();
@@ -248,13 +258,19 @@ export class Store {
     return rows.map(deviceOf);
   }
 
-  /** Unpairs one device, or every device when `id` is undefined. Returns how many. */
+  /**
+   * Unpairs one device, or every device when `id` is undefined. Unpairing every device also
+   * cancels the pairing links not used yet, so it shuts out a link that went astray too.
+   * Returns how many devices.
+   */
   revoke(id?: number): number {
-    const result =
-      id === undefined
-        ? this.db.prepare("DELETE FROM devices").run()
-        : this.db.prepare("DELETE FROM devices WHERE id = ?").run(id);
-    return Number(result.changes);
+    if (id !== undefined) {
+      return Number(this.db.prepare("DELETE FROM devices WHERE id = ?").run(id).changes);
+    }
+    return this.transaction(() => {
+      this.db.exec("DELETE FROM pairing_codes");
+      return Number(this.db.prepare("DELETE FROM devices").run().changes);
+    });
   }
 
   // --- Health data ---
