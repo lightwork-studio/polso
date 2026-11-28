@@ -31,9 +31,21 @@ server returns that whole day's value, where the phone would stop at the given t
 What agents read is text your phones sent, such as source names from the apps that wrote to
 Health. The server tells agents to treat it as data, not as instructions.
 
-To go back to the server version before agent tokens, stop the server, then run
-`sqlite3 polso.db "DROP TABLE agents; DROP TABLE type_spans; DROP INDEX samples_by_type_and_start; DROP INDEX workouts_by_start; CREATE INDEX samples_by_type_and_end ON samples (type, end_ms); CREATE INDEX workouts_by_end ON workouts (end_ms); PRAGMA user_version = 1;"`
-in the data directory. That older version refuses a database it doesn't know.
+To go back to the server version before agent tokens, which refuses a database it doesn't
+know, stop the server and run this in the data directory with the `sqlite3` command-line tool
+(`sqlite3 polso.db`). It deletes every agent token; the Health data and paired phones stay.
+
+```sql
+BEGIN;
+DROP TABLE agents;
+DROP INDEX samples_by_type_and_start;
+DROP INDEX samples_long;
+DROP INDEX workouts_by_start;
+CREATE INDEX samples_by_type_and_end ON samples (type, end_ms);
+CREATE INDEX workouts_by_end ON workouts (end_ms);
+PRAGMA user_version = 1;
+COMMIT;
+```
 
 ## What it stores
 
@@ -82,7 +94,7 @@ changes to the server: after an upgrade, restart the server before running admin
 polso-server admin pair                  # one-time pairing link, valid 15 minutes
 polso-server admin devices list          # paired phones and when each was last seen
 polso-server admin devices revoke <id>   # unpair one phone; its token stops working at once
-polso-server admin devices revoke --all  # the off switch: every phone, and unused links
+polso-server admin devices revoke --all  # every phone, and unused links
 polso-server admin agents add <name>     # an agent's token for the MCP endpoint, shown once
 polso-server admin agents list           # agents and when each last read
 polso-server admin agents revoke <id>    # take one agent's token away (or --all)
@@ -102,8 +114,12 @@ that, revoke them first. To remove everything, stop the server and delete the da
 If you withdraw Polso's access to a Health type on the phone, iOS doesn't tell Polso, so the
 server keeps that type's old records. Erase the data, and the phone sends what it can still read.
 
-There's nothing to back up: the phone holds the original data, and a new or erased server gets
-everything again from the phone.
+**Off switches:** `devices revoke --all` stops every phone from sending data, and
+`agents revoke --all` stops every agent from reading it. Stopping the server stops both.
+
+There's no Health data to back up: the phone holds the original, and a new or erased server gets
+everything again from the phone. Agent tokens live only on the server; after losing it, add them
+again.
 
 ## Install
 

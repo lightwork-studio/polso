@@ -8,7 +8,7 @@ import type {
   WorkoutRecord,
 } from "@polso/mcp/health/queries";
 import type { ToolContext } from "@polso/mcp/tools";
-import type { Store } from "./store.ts";
+import { LONG_RECORD_MS, type Store } from "./store.ts";
 
 /*
  * The MCP tools' reads, answered from the server's copy of the data instead of HealthKit, with
@@ -16,23 +16,35 @@ import type { Store } from "./store.ts";
  * the start and starts before the end), and records come newest first by start time.
  *
  * Every records query is bounded on both sides of the start-time index: a record overlapping the
- * range starts before its end, and at most the type's longest record before its start. So a
- * question about one week years ago reads that week, not every record since.
+ * range starts before its end, and, unless it's longer than LONG_RECORD_MS (two days), at most
+ * that long before its start. The rare longer records come from a partial index of their own and
+ * are merged in. So a question about one week years ago reads about that week, not every record
+ * since, whatever any one record's length.
  */
 
 const SLEEP_ID = "HKCategoryTypeIdentifierSleepAnalysis";
 const WORKOUT_ID = "HKWorkoutTypeIdentifier";
 
-/** Records of a type overlapping [start, end), newest first by start. Exported for tests. */
-export const SAMPLES_SQL = `SELECT start_ms, end_ms, number_value, text_value, unit, source
-  FROM samples
+const COLUMNS = "id, start_ms, end_ms, number_value, text_value, unit, source";
+// The partial index's condition, repeated word for word so SQLite uses the index.
+const LONG = `end_ms - start_ms > ${LONG_RECORD_MS}`;
+
+/** Records of a type overlapping [start, end) that start at most two days before it. */
+export const SAMPLES_SQL = `SELECT ${COLUMNS} FROM samples
   WHERE type = ? AND start_ms < ? AND start_ms >= ? AND end_ms >= ?
   ORDER BY start_ms DESC, id DESC LIMIT ?`;
 
-/** Sleep records overlapping [start, end), oldest first, as the sleep summary expects. */
-export const SLEEP_SQL = `SELECT start_ms, end_ms, number_value, text_value, source
-  FROM samples
+/** The same, oldest first, as the sleep summary expects. */
+export const SLEEP_SQL = `SELECT ${COLUMNS} FROM samples
   WHERE type = ? AND start_ms < ? AND start_ms >= ? AND end_ms >= ?
+  ORDER BY start_ms, id LIMIT ?`;
+
+/** Records longer than two days overlapping [start, end), from their own index. */
+export const LONG_SQL = `SELECT ${COLUMNS} FROM samples
+  WHERE type = ? AND ${LONG} AND start_ms < ? AND end_ms >= ?
+  ORDER BY start_ms DESC, id DESC LIMIT ?`;
+export const LONG_SLEEP_SQL = `SELECT ${COLUMNS} FROM samples
+  WHERE type = ? AND ${LONG} AND start_ms < ? AND end_ms >= ?
   ORDER BY start_ms, id LIMIT ?`;
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -62,6 +74,7 @@ export function adoptTimeZone(zone: string | undefined): void {
 }
 
 interface SampleRow {
+  id: string;
   start_ms: number;
   end_ms: number;
   number_value: number | null;
@@ -75,10 +88,31 @@ const recordValue = (row: { number_value: number | null; text_value: string | nu
 
 export function storeQueries(store: Store): HealthQueries {
   const db = store.db;
-  /** The bounds for records of a type overlapping a range, in the order the queries take them. */
-  const bounds = (type: string, range: { start: Date; end: Date }) => {
+  /**
+   * Records of a type overlapping a range, newest or oldest first by start: the usual ones plus
+   * the long ones, without duplicates, cut to `limit`.
+   */
+  const records = (
+    type: string,
+    range: { start: Date; end: Date },
+    limit: number,
+    order: "newest" | "oldest",
+  ): SampleRow[] => {
     const start = range.start.getTime();
-    return [type, range.end.getTime(), start - store.maxSpan(type), start] as const;
+    const end = range.end.getTime();
+    const [usualSql, longSql] =
+      order === "newest" ? [SAMPLES_SQL, LONG_SQL] : [SLEEP_SQL, LONG_SLEEP_SQL];
+    const usual = db
+      .prepare(usualSql)
+      .all(type, end, start - LONG_RECORD_MS, start, limit) as unknown as SampleRow[];
+    const long = db.prepare(longSql).all(type, end, start, limit) as unknown as SampleRow[];
+    if (long.length === 0) return usual;
+    const byId = new Map(usual.map((row) => [row.id, row]));
+    for (const row of long) byId.set(row.id, row);
+    const sign = order === "newest" ? -1 : 1;
+    return [...byId.values()]
+      .sort((a, b) => sign * (a.start_ms - b.start_ms || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)))
+      .slice(0, limit);
   };
 
   return {
@@ -86,10 +120,7 @@ export function storeQueries(store: Store): HealthQueries {
       if (type.kind !== "quantity" && type.kind !== "category") {
         throw new Error(`${type.label} has no individual records to list.`);
       }
-      const rows = db
-        .prepare(SAMPLES_SQL)
-        .all(...bounds(type.id, range), limit) as unknown as SampleRow[];
-      return rows.map((row) => ({
+      return records(type.id, range, limit, "newest").map((row) => ({
         start: new Date(row.start_ms),
         end: new Date(row.end_ms),
         value: recordValue(row),
@@ -105,7 +136,14 @@ export function storeQueries(store: Store): HealthQueries {
            WHERE type = ? AND statistic = ? AND day BETWEEN ? AND ?
            ORDER BY day`,
         )
-        .all(type.id, statistic, localDay(range.start), localDay(range.end)) as unknown as {
+        // The range's end is exclusive, as on the phone: an end at midnight takes no part of
+        // the day it starts.
+        .all(
+          type.id,
+          statistic,
+          localDay(range.start),
+          localDay(new Date(range.end.getTime() - 1)),
+        ) as unknown as {
         day: string;
         value: number;
       }[];
@@ -161,10 +199,7 @@ export function storeQueries(store: Store): HealthQueries {
     },
 
     async sleep(range, limit): Promise<SleepRecord[]> {
-      const rows = db
-        .prepare(SLEEP_SQL)
-        .all(...bounds(SLEEP_ID, range), limit) as unknown as SampleRow[];
-      return rows.map((row) => ({
+      return records(SLEEP_ID, range, limit, "oldest").map((row) => ({
         start: new Date(row.start_ms),
         end: new Date(row.end_ms),
         // As on the phone: a stage without a name is reported by its number.

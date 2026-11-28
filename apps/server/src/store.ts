@@ -12,6 +12,26 @@ import type { Changes } from "./changes.ts";
 export const DATABASE_FILE = "polso.db";
 
 /** Each entry moves the schema up one version. Never edit one that has shipped; add another. */
+/**
+ * Records longer than this (two days) are kept in a partial index of their own. It's written out
+ * in migration 2's index, whose WHERE a query must repeat word for word to use it.
+ */
+export const LONG_RECORD_MS = 172_800_000;
+
+/**
+ * Takes a schema-2 database back to schema 1, for going back to the server version before agent
+ * tokens. Every agent token is lost. The README prints it; a test runs it.
+ */
+export const DOWNGRADE_TO_1 = `BEGIN;
+DROP TABLE agents;
+DROP INDEX samples_by_type_and_start;
+DROP INDEX samples_long;
+DROP INDEX workouts_by_start;
+CREATE INDEX samples_by_type_and_end ON samples (type, end_ms);
+CREATE INDEX workouts_by_end ON workouts (end_ms);
+PRAGMA user_version = 1;
+COMMIT;`;
+
 export const MIGRATIONS: readonly string[] = [
   `
   CREATE TABLE devices (
@@ -67,8 +87,8 @@ export const MIGRATIONS: readonly string[] = [
   );
   `,
   // 2: agent tokens for the MCP endpoint, and what its reads need: records by start time, as
-  // HealthKit orders them, and each type's longest record, which bounds how far back a record
-  // that overlaps a time range can start.
+  // HealthKit orders them, and the rare records longer than LONG_RECORD_MS on their own, so a
+  // records query can look back a fixed distance (see queries.ts).
   `
   CREATE TABLE agents (
     id INTEGER PRIMARY KEY,
@@ -81,12 +101,7 @@ export const MIGRATIONS: readonly string[] = [
   CREATE INDEX samples_by_type_and_start ON samples (type, start_ms);
   DROP INDEX workouts_by_end;
   CREATE INDEX workouts_by_start ON workouts (start_ms);
-  CREATE TABLE type_spans (
-    type TEXT PRIMARY KEY,
-    max_span_ms INTEGER NOT NULL
-  );
-  INSERT INTO type_spans (type, max_span_ms)
-    SELECT type, max(end_ms - start_ms) FROM samples GROUP BY type;
+  CREATE INDEX samples_long ON samples (type, start_ms) WHERE end_ms - start_ms > 172800000;
   `,
 ];
 
@@ -302,17 +317,6 @@ export class Store {
     });
   }
 
-  /**
-   * The longest record of a type ever stored, in milliseconds. A record overlapping a time range
-   * starts at most this long before it. Deletions don't shrink it, which only widens the search.
-   */
-  maxSpan(type: string): number {
-    const row = this.db.prepare("SELECT max_span_ms FROM type_spans WHERE type = ?").get(type) as
-      | { max_span_ms: number }
-      | undefined;
-    return row?.max_span_ms ?? 0;
-  }
-
   // --- Agents ---
 
   /** Adds an agent with the hash of its token. Returns its id. */
@@ -382,12 +386,7 @@ export class Store {
            (id, type, start_ms, end_ms, number_value, text_value, unit, source)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
-      const span = this.db.prepare(
-        `INSERT INTO type_spans (type, max_span_ms) VALUES (?, ?)
-         ON CONFLICT (type) DO UPDATE SET max_span_ms = max(max_span_ms, excluded.max_span_ms)`,
-      );
       for (const s of changes.samples) {
-        span.run(s.type, s.end.getTime() - s.start.getTime());
         sample.run(
           s.id,
           s.type,
@@ -472,7 +471,7 @@ export class Store {
     const erased = this.transaction(() => {
       if (tokenHash !== undefined && !this.paired(tokenHash)) return false;
       this.db.exec(
-        "DELETE FROM samples; DELETE FROM type_spans; DELETE FROM workouts; DELETE FROM daily_stats; DELETE FROM characteristics;",
+        "DELETE FROM samples; DELETE FROM workouts; DELETE FROM daily_stats; DELETE FROM characteristics;",
       );
       const clear = this.db.prepare("DELETE FROM settings WHERE key = ?");
       for (const key of DATA_SETTINGS) clear.run(key);

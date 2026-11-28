@@ -1,9 +1,17 @@
 import { connect } from "node:net";
+import { HEALTH_TYPES, type HealthType } from "@polso/mcp/health/catalog";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runAdmin } from "../src/admin.ts";
 import { parseChanges } from "../src/changes.ts";
 import { readConfig } from "../src/config.ts";
-import { adoptTimeZone, SAMPLES_SQL, SLEEP_SQL, storeQueries } from "../src/queries.ts";
+import {
+  adoptTimeZone,
+  LONG_SLEEP_SQL,
+  LONG_SQL,
+  SAMPLES_SQL,
+  SLEEP_SQL,
+  storeQueries,
+} from "../src/queries.ts";
 import { MAX_MCP_BYTES } from "../src/server.ts";
 import { hashSecret, newSecret } from "../src/tokens.ts";
 import { heartRate, run, startServer, UUID } from "./support.ts";
@@ -261,12 +269,64 @@ describe("reads like HealthKit", () => {
 
   it("bounds every records query on both sides of the start-time index", async () => {
     const { store } = await serverWithData();
+    const plan = (sql: string) =>
+      (store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as { detail: string }[])
+        .map((p) => p.detail)
+        .join(" ");
     for (const sql of [SAMPLES_SQL, SLEEP_SQL]) {
-      const plan = store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as { detail: string }[];
-      expect(plan.map((p) => p.detail).join(" ")).toMatch(
+      expect(plan(sql)).toMatch(
         /USING INDEX samples_by_type_and_start \(type=\? AND start_ms>\? AND start_ms<\?\)/,
       );
     }
+    // Long records come from their own index, which holds only them.
+    for (const sql of [LONG_SQL, LONG_SLEEP_SQL])
+      expect(plan(sql)).toMatch(/USING INDEX samples_long/);
+  });
+
+  it("finds records longer than two days, merged in order and cut to the limit", async () => {
+    const app = await serverWithData();
+    const hr = (n: number, start: string, end: string, value: number) => ({
+      ...heartRate(n, value),
+      start,
+      end,
+    });
+    app.store.apply(
+      parseChanges({
+        samples: [
+          // Ten days long, starting well before the range: only the long index has it.
+          hr(50, "2026-09-20T00:00:00.000Z", "2026-09-30T00:00:00.000Z", 1),
+          hr(51, "2026-09-29T06:00:00.000Z", "2026-09-29T06:00:00.000Z", 2),
+          hr(52, "2026-09-29T07:00:00.000Z", "2026-09-29T07:00:00.000Z", 3),
+          // Ends before the range: not found.
+          hr(53, "2026-09-01T00:00:00.000Z", "2026-09-10T00:00:00.000Z", 4),
+        ],
+      }),
+      new Date("2026-11-27T07:00:00.000Z"),
+    );
+    const range = {
+      start: new Date("2026-09-29T00:00:00Z"),
+      end: new Date("2026-09-30T00:00:00Z"),
+    };
+    const type = HEALTH_TYPES.find(
+      (t) => t.id === "HKQuantityTypeIdentifierHeartRate",
+    ) as HealthType;
+    const queries = storeQueries(app.store);
+    expect((await queries.samples(type, range, 10)).map((r) => r.value)).toEqual([3, 2, 1]);
+    expect((await queries.samples(type, range, 2)).map((r) => r.value)).toEqual([3, 2]);
+  });
+
+  it("ends daily statistics before a range's end, as the phone does", async () => {
+    const app = await serverWithData();
+    adoptTimeZone("Pacific/Auckland");
+    const type = HEALTH_TYPES.find(
+      (t) => t.id === "HKQuantityTypeIdentifierStepCount",
+    ) as HealthType;
+    const days = await storeQueries(app.store).dailyStats(
+      type,
+      { start: new Date(2026, 10, 24), end: new Date(2026, 10, 26) },
+      "sum",
+    );
+    expect(days.map((d) => d.value)).toEqual([4000]);
   });
 
   it("puts a record in the phone's night, not the server's", async () => {

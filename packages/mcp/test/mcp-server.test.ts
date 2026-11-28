@@ -307,20 +307,26 @@ describe("token check by function", () => {
     path: "/mcp",
     headers: authorization === undefined ? {} : { authorization },
   });
-  const known = new Set(["agent-token-one", "agent-token-two"]);
+  const one = "agent-token-one-0123456789abcdefghij";
+  const two = "agent-token-two-0123456789abcdefghij";
+  const known = new Set([one, two, "short"]);
   const check = (token: string) => known.has(token);
 
   it("lets in any token the function accepts", () => {
-    expect(checkHead(head("Bearer agent-token-one"), check)).toBeUndefined();
-    expect(checkHead(head("Bearer agent-token-two"), check)).toBeUndefined();
+    expect(checkHead(head(`Bearer ${one}`), check)).toBeUndefined();
+    expect(checkHead(head(`Bearer ${two}`), check)).toBeUndefined();
+  });
+
+  it("refuses a token too short to be real, even if the function accepts it", () => {
+    expect(checkHead(head("Bearer short"), check)?.status).toBe(401);
   });
 
   it("refuses other tokens, a missing one, and web pages", () => {
     expect(checkHead(head("Bearer someone-else"), check)?.status).toBe(401);
     expect(checkHead(head(), check)?.status).toBe(401);
     const fromPage = {
-      ...head("Bearer agent-token-one"),
-      headers: { authorization: "Bearer agent-token-one", origin: "https://x" },
+      ...head(`Bearer ${one}`),
+      headers: { authorization: `Bearer ${one}`, origin: "https://x" },
     };
     expect(checkHead(fromPage, check)?.status).toBe(403);
   });

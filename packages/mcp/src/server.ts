@@ -64,6 +64,7 @@ export function checkHead(head: HttpHead, token: TokenCheck): HttpResponse | und
   const given = match?.[1];
   const valid =
     given !== undefined &&
+    given.length >= MIN_TOKEN_LENGTH &&
     (typeof token === "string"
       ? token.length >= MIN_TOKEN_LENGTH && sameToken(given, token)
       : token(given));

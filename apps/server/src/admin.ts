@@ -83,7 +83,7 @@ export function runAdmin(
         }
         const token = newSecret();
         const id = store.addAgent(name, hashSecret(token), now);
-        const publicUrl = config.publicUrl ?? store.setting("publicUrl") ?? "https://<server>";
+        const publicUrl = config.publicUrl ?? store.setting("publicUrl") ?? "https://YOUR-SERVER";
         const url = `${publicUrl}/mcp`;
         const json = JSON.stringify(
           {
