@@ -1,4 +1,4 @@
-import { decodeUtf8, encodeUtf8 } from "./utf8";
+import { decodeUtf8, encodeUtf8 } from "./utf8.ts";
 
 /** The request line and headers, available before the body arrives. */
 export interface HttpHead {

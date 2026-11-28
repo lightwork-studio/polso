@@ -1,7 +1,7 @@
-import { GROUP_ORDER, groupOf, type HealthGroup, type HealthType } from "../health/catalog";
-import { formatDay } from "../health/format";
-import { agentUnit, type DateRange, type HealthQueries, type Statistic } from "../health/queries";
-import { nightOf, summarizeNights } from "./sleep";
+import { GROUP_ORDER, groupOf, type HealthGroup, type HealthType } from "./health/catalog.ts";
+import { formatDay } from "./health/format.ts";
+import { agentUnit, type DateRange, type HealthQueries, type Statistic } from "./health/queries.ts";
+import { nightOf, summarizeNights } from "./sleep.ts";
 
 /** What a tool call needs: the types this phone has, the reads, and the current time. */
 export interface ToolContext {

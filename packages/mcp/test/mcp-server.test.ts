@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HEALTH_TYPES } from "../src/health/catalog";
-import type { HealthQueries } from "../src/health/queries";
-import { type HttpRequest, RequestReader } from "../src/mcp/http";
-import { PROTOCOL_VERSIONS } from "../src/mcp/protocol";
-import { checkHead, type EndpointOptions, handleHttp, sameToken } from "../src/mcp/server";
-import { encodeUtf8 } from "../src/mcp/utf8";
+import { HEALTH_TYPES } from "../src/health/catalog.ts";
+import type { HealthQueries } from "../src/health/queries.ts";
+import { type HttpRequest, RequestReader } from "../src/http.ts";
+import { PROTOCOL_VERSIONS } from "../src/protocol.ts";
+import { checkHead, type EndpointOptions, handleHttp, sameToken } from "../src/server.ts";
+import { encodeUtf8 } from "../src/utf8.ts";
 
 const TOKEN = "k3J9vQ2mX7pL0sR4tW8yZ1aB5cD6eF4n";
 const queries: HealthQueries = {

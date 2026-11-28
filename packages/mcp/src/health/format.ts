@@ -1,4 +1,4 @@
-import { type HealthType, valueLabel } from "./catalog";
+import { type HealthType, valueLabel } from "./catalog.ts";
 
 const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const precise = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 3 });

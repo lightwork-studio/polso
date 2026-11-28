@@ -1,13 +1,13 @@
+import { HEALTH_TYPES } from "@polso/mcp/health/catalog";
+import type { EndpointOptions } from "@polso/mcp/server";
 import Constants from "expo-constants";
 import { getRandomBytes } from "expo-crypto";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import * as SecureStore from "expo-secure-store";
-import { HEALTH_TYPES } from "../health/catalog";
 import { healthKit, healthQueries } from "../health/healthkit";
 import { availableTypes } from "../health/reader";
 import { AgentAccess, MCP_PORT } from "./access";
 import { endpointListener } from "./listener";
-import type { EndpointOptions } from "./server";
 import { listenTcp } from "./tcp";
 
 const TOKEN_KEY = "polso.agent-access.token";

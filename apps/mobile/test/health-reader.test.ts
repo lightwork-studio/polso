@@ -1,5 +1,5 @@
+import type { HealthType } from "@polso/mcp/health/catalog";
 import { describe, expect, it } from "vitest";
-import type { HealthType } from "../src/health/catalog";
 import {
   type HealthSource,
   needsReadAccess,

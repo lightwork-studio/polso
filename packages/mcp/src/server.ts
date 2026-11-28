@@ -1,4 +1,4 @@
-import type { HttpHead, HttpRequest, HttpResponse } from "./http";
+import type { HttpHead, HttpRequest, HttpResponse } from "./http.ts";
 import {
   handleMessage,
   INTERNAL_ERROR,
@@ -6,8 +6,8 @@ import {
   PARSE_ERROR,
   PROTOCOL_VERSIONS,
   type ServerInfo,
-} from "./protocol";
-import type { ToolContext } from "./tools";
+} from "./protocol.ts";
+import type { ToolContext } from "./tools.ts";
 
 export const MCP_PATH = "/mcp";
 /** Shorter tokens are refused outright, so a token that failed to generate can't open access. */

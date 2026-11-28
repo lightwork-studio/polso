@@ -1,6 +1,6 @@
 import * as HK from "@kingstinct/react-native-healthkit";
+import { HEALTH_TYPES, type HealthType } from "@polso/mcp/health/catalog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HEALTH_TYPES, type HealthType } from "../src/health/catalog";
 import { healthKit, healthQueries } from "../src/health/healthkit";
 
 // The alias in vitest.config.mts swaps the library for test/support/healthkit.ts.

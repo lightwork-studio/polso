@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MAX_BODY_BYTES, RequestReader, serializeResponse } from "../src/mcp/http";
-import { decodeUtf8, encodeUtf8 } from "../src/mcp/utf8";
+import { MAX_BODY_BYTES, RequestReader, serializeResponse } from "../src/http.ts";
+import { decodeUtf8, encodeUtf8 } from "../src/utf8.ts";
 
 const bytes = (text: string) => encodeUtf8(text);
 const raw = (body: string, headers = "") =>

@@ -1,4 +1,4 @@
-// Writes src/health/types.generated.ts from the HealthKit schema that ships with
+// Writes packages/mcp/src/health/types.generated.ts from the HealthKit schema that ships with
 // @kingstinct/react-native-healthkit, so Polso asks for every quantity and category type the
 // library can read. Run it after upgrading the library: `node scripts/health-types.mts`.
 // A test fails when the checked-in file no longer matches the installed schema.
@@ -35,7 +35,7 @@ export const schemaPath = fileURLToPath(
   ),
 );
 export const outputPath = fileURLToPath(
-  new URL("../src/health/types.generated.ts", import.meta.url),
+  new URL("../../../packages/mcp/src/health/types.generated.ts", import.meta.url),
 );
 
 export function readSchema(): HealthKitSchema {

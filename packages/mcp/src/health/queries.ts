@@ -1,4 +1,4 @@
-import type { HealthType } from "./catalog";
+import type { HealthType } from "./catalog.ts";
 
 export interface DateRange {
   readonly start: Date;
