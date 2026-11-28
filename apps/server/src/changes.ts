@@ -10,6 +10,7 @@ export const LIMITS = {
   deleted: 20_000,
   dailyStats: 500,
   dailyValues: 4_000,
+  characteristics: 50,
   text: 200,
 } as const;
 
@@ -44,6 +45,8 @@ export interface DailyStatsChange {
   readonly statistic: Statistic;
   readonly from: string;
   readonly to: string;
+  /** The unit of the values, such as "count" or "kcal". */
+  readonly unit?: string;
   readonly values: readonly { readonly day: string; readonly value: number }[];
 }
 
@@ -182,6 +185,7 @@ function dailyStats(value: unknown, where: string): DailyStatsChange {
     if (date < from || date > to) fail(`${at}.day`, "outside from and to");
     return { day: date, value: finite(e.value, `${at}.value`) };
   });
+  const unit = optionalText(d.unit, `${where}.unit`);
   if (new Set(values.map((v) => v.day)).size !== values.length) {
     fail(`${where}.values`, "a day appears twice");
   }
@@ -190,18 +194,20 @@ function dailyStats(value: unknown, where: string): DailyStatsChange {
     statistic,
     from,
     to,
+    ...(unit !== undefined && { unit }),
     values,
   };
 }
 
+// An IANA zone name such as Europe/Berlin or America/Argentina/Buenos_Aires. Checked for its form
+// only: a zone newer than the server's time zone data mustn't stall the phone's uploads.
+const ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/;
+
 function timeZone(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   const zone = text(value, "timeZone");
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: zone });
-  } catch {
-    fail("timeZone", "not a time zone Node knows");
-  }
+  if (zone.length > 64 || !ZONE.test(zone))
+    fail("timeZone", "expected a zone such as Europe/Berlin");
   return zone;
 }
 
@@ -227,7 +233,9 @@ export function parseChanges(body: unknown): Changes {
   if (b.characteristics !== undefined) {
     const c = object(b.characteristics, "characteristics");
     const entries = Object.entries(c);
-    if (entries.length > 50) fail("characteristics", "more than 50 entries");
+    if (entries.length > LIMITS.characteristics) {
+      fail("characteristics", `more than ${LIMITS.characteristics} entries`);
+    }
     for (const [type, value] of entries) {
       const where = `characteristics.${type}`;
       matching(type, TYPE_ID, where, "a HealthKit type identifier as the key");

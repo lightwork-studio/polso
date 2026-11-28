@@ -27,18 +27,24 @@ export function runAdmin(
   const [command, sub, arg] = args;
   switch (command) {
     case "pair": {
-      if (!config.publicUrl) {
-        throw new UsageError("Set POLSO_PUBLIC_URL to the server's https address first.");
+      // The server records its settings when it starts, so admin needn't repeat them.
+      const publicUrl = config.publicUrl ?? store.setting("publicUrl");
+      if (!publicUrl) {
+        throw new UsageError(
+          "Set POLSO_PUBLIC_URL to the server's https address, and start the server with it.",
+        );
       }
       const code = newSecret();
       store.addPairingCode(hashSecret(code), new Date(now.getTime() + PAIRING_CODE_MS));
       const lines = [
-        `${config.publicUrl}/pair#${code}`,
+        `${publicUrl}/pair#${code}`,
         "",
         "Open this link on the iPhone with Polso, or scan it as a QR code with the camera",
         "(qrencode -t ansiutf8 '<link>'). It works once, within 15 minutes.",
       ];
-      if (!config.pairing) lines.push("", "Pairing is off (POLSO_PAIRING=off): turn it on first.");
+      if (store.setting("pairing") === "off") {
+        lines.push("", "The server runs with POLSO_PAIRING=off: turn pairing on first.");
+      }
       return lines.join("\n");
     }
     case "devices": {
@@ -81,8 +87,12 @@ export function runAdmin(
           "This deletes every Health record on the server. Run `erase --yes` to go ahead.",
         );
       }
+      const before = store.counts();
       store.eraseHealthData();
-      return "Erased every Health record. Paired phones send their whole history again on their next sync.";
+      return [
+        `Erased ${before.samples} samples, ${before.workouts} workouts and ${before.dailyStats} daily statistics.`,
+        "Paired phones send their whole history again on their next sync; revoke them first to stop that.",
+      ].join("\n");
     }
   }
   throw new UsageError(ADMIN_USAGE);

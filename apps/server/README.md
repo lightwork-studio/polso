@@ -18,7 +18,11 @@ the codes or tokens themselves.
 
 The server has to read the data to answer agents, so it can't be end-to-end encrypted. It's
 protected by the server's disk and file permissions: the data directory and everything in it is
-readable only by the server's user. Run the server on a machine you control.
+readable only by the server's user, and the server tightens them when it starts. Run the server
+on a machine you control, with full-disk encryption: deleting data doesn't wipe the disk blocks
+it was on.
+
+Nothing caps how much a paired phone stores. Years of heart-rate data take a few hundred MB.
 
 ## Run
 
@@ -31,17 +35,21 @@ POLSO_DATA=./data POLSO_PUBLIC_URL=https://polso.example.com pnpm --filter @pols
 | `POLSO_DATA`       | Directory for the database (default `./data`)                             |
 | `POLSO_PUBLIC_URL` | The server's https address, as phones reach it, for pairing links         |
 | `POLSO_PAIRING`    | `off` stops pairing new phones; paired phones keep syncing (default `on`) |
-| `HOST`, `PORT`     | The listener (default `127.0.0.1:8788`). Put HTTPS in front of it         |
+| `POLSO_HOST`       | The address to listen on (default `127.0.0.1`). Put HTTPS in front of it  |
+| `POLSO_PORT`       | The port to listen on (default `8788`)                                    |
 
 The server speaks plain HTTP on the address it listens on. Put a reverse proxy with HTTPS in
 front of it, or reach it over Tailscale (`tailscale serve`), so tokens and Health data never
-cross a network unencrypted. One server uses a data directory at a time, and a second refuses to
+cross a network unencrypted. Let the proxy pass request bodies up to 8 MB (in nginx,
+`client_max_body_size 8m`). One server uses a data directory at a time, and a second refuses to
 start while the first runs. Keep the data directory on a local disk.
 
 ## Pair a phone and manage the data
 
 `polso-server admin` works on the same database while the server runs. Run it as the server's
-user, with the same `POLSO_DATA`:
+user, with the same `POLSO_DATA`. It uses the public address and pairing setting the server
+started with. It refuses to run where there's no database, so a mistyped `POLSO_DATA` can't
+report success while doing nothing:
 
 ```sh
 polso-server admin pair                  # one-time pairing link, valid 15 minutes
@@ -60,6 +68,9 @@ logs.
 **Erase** deletes the Health records, with SQLite's secure delete, and empties the write-ahead
 log. Paired phones stay paired and send their whole history again on their next sync. To stop
 that, revoke them first. To remove everything, stop the server and delete the data directory.
+
+If you withdraw Polso's access to a Health type on the phone, iOS doesn't tell Polso, so the
+server keeps that type's old records. Erase the data, and the phone sends what it can still read.
 
 There's nothing to back up: the phone holds the original data, and a new or erased server gets
 everything again from the phone.

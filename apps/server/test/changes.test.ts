@@ -52,6 +52,15 @@ describe("parseChanges", () => {
     expect(parseChanges({})).toMatchObject({ samples: [], deleted: [], dailyStats: [] });
   });
 
+  it("accepts a zone this server's time zone data doesn't know yet", () => {
+    expect(parseChanges({ timeZone: "America/New_Town" }).timeZone).toBe("America/New_Town");
+  });
+
+  it("keeps the unit of daily statistics", () => {
+    const changes = parseChanges({ dailyStats: [{ ...steps, unit: "count" }] });
+    expect(changes.dailyStats[0]?.unit).toBe("count");
+  });
+
   it("accepts a type this server doesn't list yet", () => {
     const newer = { ...heartRate(1), type: "HKQuantityTypeIdentifierSomethingNew2030" };
     expect(parseChanges({ samples: [newer] }).samples[0]?.type).toBe(newer.type);
@@ -107,7 +116,7 @@ describe("parseChanges", () => {
       },
       "a day appears twice",
     ],
-    ["an unknown time zone", { timeZone: "Mars/Olympus" }, "timeZone"],
+    ["a malformed time zone", { timeZone: "../../etc/passwd" }, "timeZone"],
     ["a bad characteristic", { characteristics: { bloodType: "A+" } }, "characteristics"],
   ])("rejects %s", (_, body, message) => {
     rejects(body, message);

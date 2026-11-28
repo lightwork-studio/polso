@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { Changes } from "./changes.ts";
 
@@ -11,7 +12,7 @@ import type { Changes } from "./changes.ts";
 export const DATABASE_FILE = "polso.db";
 
 /** Each entry moves the schema up one version. Never edit one that has shipped; add another. */
-const MIGRATIONS: readonly string[] = [
+export const MIGRATIONS: readonly string[] = [
   `
   CREATE TABLE devices (
     id INTEGER PRIMARY KEY,
@@ -53,6 +54,7 @@ const MIGRATIONS: readonly string[] = [
     statistic TEXT NOT NULL,
     day TEXT NOT NULL,
     value REAL NOT NULL,
+    unit TEXT,
     PRIMARY KEY (type, statistic, day)
   );
   CREATE TABLE characteristics (
@@ -90,6 +92,39 @@ const deviceOf = (row: DeviceRow): Device => ({
 /** How often a device's last-seen time is written, so every request doesn't write. */
 const LAST_SEEN_EVERY_MS = 60_000;
 
+/** Settings that describe the Health data, cleared with it. Others (the server's own) stay. */
+const DATA_SETTINGS = ["timeZone", "lastUploadAt"] as const;
+
+export class MissingDatabaseError extends Error {
+  override name = "MissingDatabaseError";
+}
+
+/** Blocks the thread briefly; only used while another process holds the database. */
+const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+export const isBusy = (error: unknown) =>
+  error instanceof Error && /database is locked|SQLITE_BUSY/i.test(error.message);
+
+/** Retries `work` while another process holds a lock that busy_timeout doesn't wait for. */
+function whileBusy<T>(work: () => T, tries = 50): T {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return work();
+    } catch (error) {
+      if (!isBusy(error) || attempt >= tries) throw error;
+      pause(100);
+    }
+  }
+}
+
+const hasContent = (c: Changes) =>
+  c.timeZone !== undefined ||
+  c.samples.length > 0 ||
+  c.workouts.length > 0 ||
+  c.deleted.length > 0 ||
+  c.dailyStats.length > 0 ||
+  c.characteristics.length > 0;
+
 export class Store {
   readonly db: DatabaseSync;
 
@@ -97,14 +132,24 @@ export class Store {
     this.db = db;
   }
 
-  /** Opens (or creates) the database and brings its schema up to date. */
-  static open(path: string): Store {
+  /**
+   * Opens the database and brings its schema up to date. The server creates it; admin commands
+   * pass `create: false`, so a mistyped data directory fails instead of acting on an empty one.
+   */
+  static open(path: string, options: { create?: boolean } = {}): Store {
+    if (options.create === false && !existsSync(path)) {
+      throw new MissingDatabaseError(
+        `No Polso database at ${path}. Set POLSO_DATA to the server's data directory.`,
+      );
+    }
     const db = new DatabaseSync(path);
     try {
       // Wait for the other process (server or admin) rather than failing at once.
-      db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL");
+      db.exec("PRAGMA busy_timeout = 5000");
+      // Switching a new file to WAL doesn't honour busy_timeout, so it retries by hand.
+      whileBusy(() => db.exec("PRAGMA journal_mode = WAL"));
       // Deleted Health records are overwritten in the file, not just unlinked.
-      db.exec("PRAGMA secure_delete = ON");
+      db.exec("PRAGMA synchronous = FULL; PRAGMA secure_delete = ON");
       const store = new Store(db);
       store.migrate();
       return store;
@@ -118,7 +163,7 @@ export class Store {
     this.db.close();
   }
 
-  private migrate(): void {
+  private version(): number {
     const { user_version: version } = this.db.prepare("PRAGMA user_version").get() as {
       user_version: number;
     };
@@ -127,8 +172,17 @@ export class Store {
         `The database is from a newer Polso server (schema ${version}). Run that version.`,
       );
     }
+    return version;
+  }
+
+  /**
+   * Applies missing migrations. The version is read again under the write lock, so when the
+   * server and an admin command open the database together, only one of them migrates.
+   */
+  private migrate(): void {
+    if (this.version() === MIGRATIONS.length) return;
     this.transaction(() => {
-      for (let next = version; next < MIGRATIONS.length; next++) {
+      for (let next = this.version(); next < MIGRATIONS.length; next++) {
         this.db.exec(MIGRATIONS[next] as string);
       }
       this.db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
@@ -205,9 +259,20 @@ export class Store {
 
   // --- Health data ---
 
-  /** Applies one upload in a single transaction: records first, then deletions. */
-  apply(changes: Changes, now: Date): void {
-    this.transaction(() => {
+  private paired(tokenHash: string): boolean {
+    const row = this.db.prepare("SELECT 1 FROM devices WHERE token_hash = ?").get(tokenHash);
+    return row !== undefined;
+  }
+
+  /**
+   * Applies one upload in a single transaction: records first, then deletions. With a token
+   * hash, the device is checked again inside the transaction, so a device revoked while its
+   * upload was arriving writes nothing. Returns false in that case.
+   */
+  apply(changes: Changes, now: Date, tokenHash?: string): boolean {
+    if (!hasContent(changes)) return true;
+    return this.transaction(() => {
+      if (tokenHash !== undefined && !this.paired(tokenHash)) return false;
       const sample = this.db.prepare(
         `INSERT OR REPLACE INTO samples
            (id, type, start_ms, end_ms, number_value, text_value, unit, source)
@@ -255,11 +320,13 @@ export class Store {
         "DELETE FROM daily_stats WHERE type = ? AND statistic = ? AND day BETWEEN ? AND ?",
       );
       const day = this.db.prepare(
-        "INSERT INTO daily_stats (type, statistic, day, value) VALUES (?, ?, ?, ?)",
+        "INSERT INTO daily_stats (type, statistic, day, value, unit) VALUES (?, ?, ?, ?, ?)",
       );
       for (const stats of changes.dailyStats) {
         clearDays.run(stats.type, stats.statistic, stats.from, stats.to);
-        for (const v of stats.values) day.run(stats.type, stats.statistic, v.day, v.value);
+        for (const v of stats.values) {
+          day.run(stats.type, stats.statistic, v.day, v.value, stats.unit ?? null);
+        }
       }
       const setCharacteristic = this.db.prepare(
         "INSERT OR REPLACE INTO characteristics (type, value) VALUES (?, ?)",
@@ -269,8 +336,9 @@ export class Store {
         if (value === null) clearCharacteristic.run(type);
         else setCharacteristic.run(type, value);
       }
-      if (changes.timeZone) this.setSetting("timeZone", changes.timeZone);
-      this.setSetting("lastUploadAt", now.toISOString());
+      if (changes.timeZone) this.saveSetting("timeZone", changes.timeZone);
+      this.saveSetting("lastUploadAt", now.toISOString());
+      return true;
     });
   }
 
@@ -282,21 +350,42 @@ export class Store {
     const current = this.setting("generation");
     if (current !== undefined) return current;
     const fresh = randomUUID();
-    this.setSetting("generation", fresh);
+    this.saveSetting("generation", fresh);
     return fresh;
   }
 
-  /** Deletes every copied Health record and starts a new generation. Devices stay paired. */
-  eraseHealthData(): void {
-    this.transaction(() => {
+  /**
+   * Deletes every copied Health record and starts a new generation; devices stay paired. With a
+   * token hash, only a device that is still paired may do it (a phone starting over), and false
+   * means it isn't. Throws when the deleted records can't be cleared out of the write-ahead log.
+   */
+  eraseHealthData(tokenHash?: string): boolean {
+    const erased = this.transaction(() => {
+      if (tokenHash !== undefined && !this.paired(tokenHash)) return false;
       this.db.exec(
-        `DELETE FROM samples; DELETE FROM workouts; DELETE FROM daily_stats;
-         DELETE FROM characteristics; DELETE FROM settings;`,
+        "DELETE FROM samples; DELETE FROM workouts; DELETE FROM daily_stats; DELETE FROM characteristics;",
       );
-      this.setSetting("generation", randomUUID());
+      const clear = this.db.prepare("DELETE FROM settings WHERE key = ?");
+      for (const key of DATA_SETTINGS) clear.run(key);
+      this.saveSetting("generation", randomUUID());
+      return true;
     });
-    // Shrink the file, and empty the write-ahead log, which can still hold the old pages.
-    this.db.exec("VACUUM; PRAGMA wal_checkpoint(TRUNCATE)");
+    if (!erased) return false;
+    // Shrink the file, then empty the write-ahead log, which still holds the old pages. A reader
+    // in the other process can keep the log busy for a moment, so this waits for it.
+    this.db.exec("VACUUM");
+    for (let attempt = 1; ; attempt++) {
+      const { busy } = this.db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as {
+        busy: number;
+      };
+      if (busy === 0) return true;
+      if (attempt >= 20) {
+        throw new Error(
+          "The records are deleted, but the write-ahead log still holds copies. Run erase again, or stop the server first.",
+        );
+      }
+      pause(250);
+    }
   }
 
   /** Counts of stored records, for the admin's status command. */
@@ -319,7 +408,7 @@ export class Store {
     return row?.value;
   }
 
-  private setSetting(key: string, value: string): void {
+  saveSetting(key: string, value: string): void {
     this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
   }
 }

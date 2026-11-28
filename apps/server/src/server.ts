@@ -1,11 +1,15 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { ChangesError, parseChanges } from "./changes.ts";
 import { PAIR_PAGE, PAIR_PAGE_CSP } from "./pair-page.ts";
-import type { Store } from "./store.ts";
+import { isBusy, type Store } from "./store.ts";
 import { hashSecret, looksLikeSecret, newSecret } from "./tokens.ts";
 
-/** Largest request body the server reads. */
+/** Largest upload body the server reads, from a paired device. */
 export const MAX_BODY_BYTES = 8 * 1024 * 1024;
+/** Largest body before a device is known: pairing needs a code and a name. */
+export const MAX_PAIRING_BYTES = 4 * 1024;
+/** Open connections at once; one person's phones need a handful. */
+export const MAX_CONNECTIONS = 64;
 const MAX_DEVICE_NAME = 100;
 
 export interface ServerOptions {
@@ -25,24 +29,35 @@ class HttpError extends Error {
   }
 }
 
-function send(response: ServerResponse, status: number, body: unknown): void {
+/** The client went away before its request arrived; there's no one to answer. */
+class ClientGoneError extends Error {
+  override name = "ClientGoneError";
+}
+
+function send(
+  response: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
   const json = JSON.stringify(body);
   response.writeHead(status, {
     "Content-Type": "application/json",
     "Content-Length": Buffer.byteLength(json),
     "Cache-Control": "no-store",
+    ...headers,
   });
   response.end(json);
 }
 
-/** Reads a JSON body, stopping as soon as it passes the limit. */
-async function readJson(request: IncomingMessage): Promise<unknown> {
+/** Reads a JSON body, stopping as soon as it passes `limit` bytes. */
+async function readJson(request: IncomingMessage, limit: number): Promise<unknown> {
   const type = request.headers["content-type"] ?? "";
   if (!/^application\/json(\s*;|$)/i.test(type)) {
     throw new HttpError(415, "Send the body as application/json.");
   }
   const declared = Number(request.headers["content-length"]);
-  if (declared > MAX_BODY_BYTES) throw new HttpError(413, "The body is too large.");
+  if (declared > limit) throw new HttpError(413, "The body is too large.");
   // Plain listeners rather than for-await: leaving that loop early would destroy the request,
   // and with it the socket the answer goes out on.
   const chunks = await new Promise<Buffer[]>((resolve, reject) => {
@@ -50,7 +65,7 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
     let size = 0;
     const onData = (chunk: Buffer) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         stop();
         reject(new HttpError(413, "The body is too large."));
         return;
@@ -61,18 +76,25 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
       stop();
       resolve(received);
     };
-    const onError = (error: Error) => {
+    const onError = () => {
       stop();
-      reject(error);
+      reject(new ClientGoneError());
+    };
+    const onClose = () => {
+      if (request.complete) return;
+      stop();
+      reject(new ClientGoneError());
     };
     const stop = () => {
       request.off("data", onData);
       request.off("end", onEnd);
       request.off("error", onError);
+      request.off("close", onClose);
     };
     request.on("data", onData);
     request.on("end", onEnd);
     request.on("error", onError);
+    request.on("close", onClose);
   });
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -86,41 +108,51 @@ function bearer(request: IncomingMessage): string | undefined {
   return match?.[1];
 }
 
-/** The sync server: pairing, uploads and the pairing page. */
+const NOT_PAIRED = "This device isn't paired with the server. Pair it again.";
+
+/** The sync server: pairing, uploads, resets and the pairing page. */
 export function createSyncServer(options: ServerOptions): Server {
   const { store } = options;
   const now = options.now ?? (() => new Date());
+
+  /** The hash of the request's device token, when it belongs to a paired device. */
+  function device(request: IncomingMessage, response: ServerResponse): string {
+    const token = bearer(request);
+    if (token !== undefined && looksLikeSecret(token)) {
+      const tokenHash = hashSecret(token);
+      if (store.deviceFor(tokenHash, now())) return tokenHash;
+    }
+    response.setHeader("WWW-Authenticate", 'Bearer realm="polso"');
+    throw new HttpError(401, NOT_PAIRED);
+  }
 
   async function pair(request: IncomingMessage, response: ServerResponse): Promise<void> {
     if (options.pairing === false) {
       throw new HttpError(403, "Pairing is switched off on this server.");
     }
-    const body = await readJson(request);
-    const { code, device } = (body ?? {}) as { code?: unknown; device?: unknown };
-    if (typeof device !== "string" || device.trim() === "" || device.length > MAX_DEVICE_NAME) {
+    const body = await readJson(request, MAX_PAIRING_BYTES);
+    const { code, device: name } = (body ?? {}) as { code?: unknown; device?: unknown };
+    if (
+      typeof name !== "string" ||
+      name.trim() === "" ||
+      name.length > MAX_DEVICE_NAME ||
+      /\p{Cc}/u.test(name)
+    ) {
       throw new HttpError(400, "Name the device in 1 to 100 characters.");
     }
     if (typeof code !== "string" || !looksLikeSecret(code)) {
       throw new HttpError(401, "That pairing code doesn't work. Make a new one.");
     }
     const token = newSecret();
-    if (!store.pair(hashSecret(code), device.trim(), hashSecret(token), now())) {
+    if (!store.pair(hashSecret(code), name.trim(), hashSecret(token), now())) {
       throw new HttpError(401, "That pairing code doesn't work. Make a new one.");
     }
     send(response, 200, { token });
   }
 
   async function changes(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const token = bearer(request);
-    const device =
-      token !== undefined && looksLikeSecret(token)
-        ? store.deviceFor(hashSecret(token), now())
-        : undefined;
-    if (!device) {
-      response.setHeader("WWW-Authenticate", 'Bearer realm="polso"');
-      throw new HttpError(401, "This device isn't paired with the server. Pair it again.");
-    }
-    const body = await readJson(request);
+    const tokenHash = device(request, response);
+    const body = await readJson(request, MAX_BODY_BYTES);
     let parsed: ReturnType<typeof parseChanges>;
     try {
       parsed = parseChanges(body);
@@ -128,7 +160,14 @@ export function createSyncServer(options: ServerOptions): Server {
       if (error instanceof ChangesError) throw new HttpError(400, error.message);
       throw error;
     }
-    store.apply(parsed, now());
+    // Checked again as it's written: the device may have been revoked while the body arrived.
+    if (!store.apply(parsed, now(), tokenHash)) throw new HttpError(401, NOT_PAIRED);
+    send(response, 200, { ok: true, generation: store.generation() });
+  }
+
+  async function reset(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const tokenHash = device(request, response);
+    if (!store.eraseHealthData(tokenHash)) throw new HttpError(401, NOT_PAIRED);
     send(response, 200, { ok: true, generation: store.generation() });
   }
 
@@ -152,6 +191,7 @@ export function createSyncServer(options: ServerOptions): Server {
     const routes: Record<string, typeof pair> = {
       "/sync/v1/pair": pair,
       "/sync/v1/changes": changes,
+      "/sync/v1/reset": reset,
     };
     const handler = routes[path];
     if (!handler) throw new HttpError(404, "Not found.");
@@ -164,7 +204,7 @@ export function createSyncServer(options: ServerOptions): Server {
 
   const server = createServer((request, response) => {
     route(request, response).catch((error: unknown) => {
-      if (response.headersSent) {
+      if (error instanceof ClientGoneError || response.headersSent || response.destroyed) {
         response.destroy();
         return;
       }
@@ -176,12 +216,25 @@ export function createSyncServer(options: ServerOptions): Server {
         send(response, error.status, { error: error.message });
         return;
       }
+      // An admin command (erase, say) holds the database; the phone retries later.
+      if (isBusy(error)) {
+        send(
+          response,
+          503,
+          { error: "The server is busy. Try again shortly." },
+          {
+            "Retry-After": "5",
+          },
+        );
+        return;
+      }
       options.onError?.(error);
       send(response, 500, { error: "Internal error." });
     });
   });
-  // Slow clients can't hold connections open indefinitely.
+  // Slow clients can't hold connections open indefinitely, nor open them without end.
   server.headersTimeout = 10_000;
   server.requestTimeout = 60_000;
+  server.maxConnections = MAX_CONNECTIONS;
   return server;
 }

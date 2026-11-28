@@ -1,10 +1,10 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ADMIN_USAGE, runAdmin, UsageError } from "./admin.ts";
 import { type Config, ConfigError, readConfig } from "./config.ts";
 import { LockedError, lockDataDirectory } from "./lock.ts";
 import { createSyncServer } from "./server.ts";
-import { DATABASE_FILE, Store } from "./store.ts";
+import { DATABASE_FILE, MissingDatabaseError, Store } from "./store.ts";
 
 /*
  * The self-hosted Polso server: one Node process and one SQLite database.
@@ -13,21 +13,34 @@ import { DATABASE_FILE, Store } from "./store.ts";
  *   polso-server admin <command>  pairs phones and manages the data (see ADMIN_USAGE)
  */
 
-function prepareDirectory(config: Config): void {
-  // Everything the server writes is for its own user only.
+/**
+ * Everything the server writes is for its own user only: new files through the umask, and a
+ * directory or database that already existed (copied in, say) is tightened when the server
+ * starts. (Windows ignores these modes.)
+ */
+function prepareDirectory(config: Config, tighten: boolean): void {
   process.umask(process.umask() | 0o077);
   mkdirSync(config.directory, { recursive: true, mode: 0o700 });
+  if (!tighten) return;
+  chmodSync(config.directory, 0o700);
+  for (const suffix of ["", "-wal", "-shm"]) {
+    const file = join(config.directory, DATABASE_FILE + suffix);
+    if (existsSync(file)) chmodSync(file, 0o600);
+  }
 }
 
-const openStore = (config: Config) => Store.open(join(config.directory, DATABASE_FILE));
+const databasePath = (config: Config) => join(config.directory, DATABASE_FILE);
 
 function serve(config: Config): void {
-  prepareDirectory(config);
+  prepareDirectory(config, true);
   // Taken before the database opens, so two servers never migrate it at once.
   const unlock = lockDataDirectory(config.directory);
   let store: Store;
   try {
-    store = openStore(config);
+    store = Store.open(databasePath(config));
+    // Recorded for `admin pair`, which runs without the server's environment.
+    if (config.publicUrl) store.saveSetting("publicUrl", config.publicUrl);
+    store.saveSetting("pairing", config.pairing ? "on" : "off");
   } catch (error) {
     unlock();
     throw error;
@@ -39,7 +52,12 @@ function serve(config: Config): void {
   });
   server.listen(config.port, config.host, () => {
     console.log(`Polso server listening on http://${config.host}:${config.port}`);
-    if (!config.publicUrl) console.warn("POLSO_PUBLIC_URL isn't set, so phones can't pair yet.");
+    if (config.host !== "127.0.0.1" && config.host !== "::1" && config.host !== "localhost") {
+      console.warn("It listens beyond this machine over plain HTTP: put HTTPS in front of it.");
+    }
+    if (!config.publicUrl) {
+      console.warn("POLSO_PUBLIC_URL isn't set, so `admin pair` can't make pairing links yet.");
+    }
   });
   const stop = () => {
     server.close(() => {
@@ -62,8 +80,8 @@ function main(argv: readonly string[]): number {
       return -1;
     }
     if (command === "admin") {
-      prepareDirectory(config);
-      const store = openStore(config);
+      // Only an existing database: a mistyped POLSO_DATA must not erase or revoke nothing.
+      const store = Store.open(databasePath(config), { create: false });
       try {
         console.log(runAdmin(rest, store, config));
       } finally {
@@ -74,7 +92,11 @@ function main(argv: readonly string[]): number {
     console.error(`Usage: polso-server [serve | admin <command>]\n\n${ADMIN_USAGE}`);
     return 2;
   } catch (error) {
-    if (error instanceof UsageError || error instanceof ConfigError) {
+    if (
+      error instanceof UsageError ||
+      error instanceof ConfigError ||
+      error instanceof MissingDatabaseError
+    ) {
       console.error(error.message);
       return 2;
     }
