@@ -13,9 +13,14 @@ export const MCP_PATH = "/mcp";
 /** Shorter tokens are refused outright, so a token that failed to generate can't open access. */
 export const MIN_TOKEN_LENGTH = 32;
 
+/**
+ * Who may call the endpoint: the one bearer token every request must carry (the phone), or a
+ * function that says whether a presented token is valid (a server with several agent tokens).
+ */
+export type TokenCheck = string | ((token: string) => boolean);
+
 export interface EndpointOptions {
-  /** The bearer token every request must carry. */
-  readonly token: string;
+  readonly token: TokenCheck;
   readonly server: ServerInfo;
   readonly context: () => Promise<ToolContext>;
 }
@@ -52,11 +57,18 @@ export function sameToken(given: string, expected: string): boolean {
  * Requests from web pages carry an Origin header and are refused, so a site the person visits
  * can't reach the endpoint through their browser.
  */
-export function checkHead(head: HttpHead, token: string): HttpResponse | undefined {
+export function checkHead(head: HttpHead, token: TokenCheck): HttpResponse | undefined {
   if (head.headers.origin !== undefined) return text(403, "Forbidden.");
   // The token comes before the path, so without it every path answers alike.
   const match = /^Bearer +([A-Za-z0-9._~+/-]+=*)$/i.exec(head.headers.authorization ?? "");
-  if (token.length < MIN_TOKEN_LENGTH || !match || !sameToken(match[1] as string, token)) {
+  const given = match?.[1];
+  const valid =
+    given !== undefined &&
+    given.length >= MIN_TOKEN_LENGTH &&
+    (typeof token === "string"
+      ? token.length >= MIN_TOKEN_LENGTH && sameToken(given, token)
+      : token(given));
+  if (!valid) {
     return text(401, "Unauthorized.", { "www-authenticate": "Bearer" });
   }
   if (head.path !== MCP_PATH) return text(404, "Not found.");

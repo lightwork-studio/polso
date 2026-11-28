@@ -46,7 +46,7 @@ describe("opening the database", () => {
       );
       for (const run of await Promise.all(runs)) expect(run).toEqual({ code: 0, stderr: "" });
       const raw = new DatabaseSync(path);
-      expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
+      expect(raw.prepare("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length });
       raw.close();
     }
   }, 60_000);

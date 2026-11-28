@@ -11,6 +11,27 @@ import type { Changes } from "./changes.ts";
 
 export const DATABASE_FILE = "polso.db";
 
+/**
+ * Records longer than this (two days) are kept in a partial index of their own. It's written out
+ * in migration 2's index, whose WHERE a query must repeat word for word to use it.
+ */
+export const LONG_RECORD_MS = 172_800_000;
+
+/**
+ * Takes a schema-2 database back to schema 1, for going back to the server version before agent
+ * tokens. Every agent token is lost. The README prints it; a test runs it.
+ */
+export const DOWNGRADE_TO_1 = `BEGIN;
+DROP TABLE agents;
+DROP INDEX samples_by_type_and_start;
+DROP INDEX samples_long;
+DROP INDEX workouts_by_start;
+DROP INDEX workouts_long;
+CREATE INDEX samples_by_type_and_end ON samples (type, end_ms);
+CREATE INDEX workouts_by_end ON workouts (end_ms);
+PRAGMA user_version = 1;
+COMMIT;`;
+
 /** Each entry moves the schema up one version. Never edit one that has shipped; add another. */
 export const MIGRATIONS: readonly string[] = [
   `
@@ -66,7 +87,32 @@ export const MIGRATIONS: readonly string[] = [
     value TEXT NOT NULL
   );
   `,
+  // 2: agent tokens for the MCP endpoint, and what its reads need: records by start time, as
+  // HealthKit orders them, and the rare records longer than LONG_RECORD_MS on their own, so a
+  // records query can look back a fixed distance (see queries.ts).
+  `
+  CREATE TABLE agents (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+  );
+  DROP INDEX samples_by_type_and_end;
+  CREATE INDEX samples_by_type_and_start ON samples (type, start_ms);
+  DROP INDEX workouts_by_end;
+  CREATE INDEX workouts_by_start ON workouts (start_ms);
+  CREATE INDEX samples_long ON samples (type, start_ms) WHERE end_ms - start_ms > 172800000;
+  CREATE INDEX workouts_long ON workouts (start_ms) WHERE end_ms - start_ms > 172800000;
+  `,
 ];
+
+export interface Agent {
+  readonly id: number;
+  readonly name: string;
+  readonly createdAt: Date;
+  readonly lastUsedAt?: Date;
+}
 
 export interface Device {
   readonly id: number;
@@ -271,6 +317,54 @@ export class Store {
       this.db.exec("DELETE FROM pairing_codes");
       return Number(this.db.prepare("DELETE FROM devices").run().changes);
     });
+  }
+
+  // --- Agents ---
+
+  /** Adds an agent with the hash of its token. Returns its id. */
+  addAgent(name: string, tokenHash: string, now: Date): number {
+    const result = this.db
+      .prepare("INSERT INTO agents (name, token_hash, created_at) VALUES (?, ?, ?)")
+      .run(name, tokenHash, now.getTime());
+    return Number(result.lastInsertRowid);
+  }
+
+  /** Whether an agent holds this token hash. Notes when it was last used. */
+  agentFor(tokenHash: string, now: Date): boolean {
+    const row = this.db
+      .prepare("SELECT id, last_used_at FROM agents WHERE token_hash = ?")
+      .get(tokenHash) as { id: number; last_used_at: number | null } | undefined;
+    if (!row) return false;
+    if (row.last_used_at === null || now.getTime() - row.last_used_at >= LAST_SEEN_EVERY_MS) {
+      this.db.prepare("UPDATE agents SET last_used_at = ? WHERE id = ?").run(now.getTime(), row.id);
+    }
+    return true;
+  }
+
+  agents(): Agent[] {
+    const rows = this.db
+      .prepare("SELECT id, name, created_at, last_used_at FROM agents ORDER BY id")
+      .all() as unknown as {
+      id: number;
+      name: string;
+      created_at: number;
+      last_used_at: number | null;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      createdAt: new Date(row.created_at),
+      ...(row.last_used_at !== null && { lastUsedAt: new Date(row.last_used_at) }),
+    }));
+  }
+
+  /** Removes one agent's token, or every agent's when `id` is undefined. Returns how many. */
+  revokeAgent(id?: number): number {
+    const result =
+      id === undefined
+        ? this.db.prepare("DELETE FROM agents").run()
+        : this.db.prepare("DELETE FROM agents WHERE id = ?").run(id);
+    return Number(result.changes);
   }
 
   // --- Health data ---

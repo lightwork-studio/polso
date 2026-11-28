@@ -36,7 +36,9 @@ server's host name and asks the person to confirm, and it accepts only `https` s
 hands the code to the app through its link scheme (`polso://`, or `polso-preview://` and
 `polso-dev://` for test builds). Another app on the phone could register the same scheme and take
 the code. It could then send, change or erase the server's data, but not read it, and the real
-phone's pairing would fail, which shows. If that happens, revoke every device
+phone's pairing would fail, which shows. What it sends reaches agents, too, so its text (source
+names, say) could try to instruct them; the server tells agents to treat record text as data,
+which lowers that risk without ruling it out. If that happens, revoke every device
 (`polso-server admin devices revoke --all`, which also cancels unused links) and pair again.
 
 ## Changes
@@ -70,7 +72,7 @@ The body holds what changed since the phone's last successful upload. Every fiel
       "type": "HKCategoryTypeIdentifierSleepAnalysis",
       "start": "2026-11-26T22:40:00.000Z",
       "end": "2026-11-27T00:10:00.000Z",
-      "value": "asleepCore", // The value's name for categories
+      "value": "asleepCore", // The value's name for categories ("recorded" for notApplicable)
       "source": "Apple Watch"
     }
   ],

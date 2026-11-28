@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HEALTH_TYPES } from "../src/health/catalog.ts";
 import type { HealthQueries } from "../src/health/queries.ts";
-import { type HttpRequest, RequestReader } from "../src/http.ts";
+import { type HttpHead, type HttpRequest, RequestReader } from "../src/http.ts";
 import { PROTOCOL_VERSIONS } from "../src/protocol.ts";
 import { checkHead, type EndpointOptions, handleHttp, sameToken } from "../src/server.ts";
 import { encodeUtf8 } from "../src/utf8.ts";
@@ -298,5 +298,36 @@ describe("MCP", () => {
     const first = reader.push(encodeUtf8(`${head}{}${smuggled}`));
     expect(first).toMatchObject({ state: "complete", request: { path: "/mcp", body: "{}" } });
     expect(reader.push(encodeUtf8(smuggled))).toBe(first);
+  });
+});
+
+describe("token check by function", () => {
+  const head = (authorization?: string): HttpHead => ({
+    method: "POST",
+    path: "/mcp",
+    headers: authorization === undefined ? {} : { authorization },
+  });
+  const one = "agent-token-one-0123456789abcdefghij";
+  const two = "agent-token-two-0123456789abcdefghij";
+  const known = new Set([one, two, "short"]);
+  const check = (token: string) => known.has(token);
+
+  it("lets in any token the function accepts", () => {
+    expect(checkHead(head(`Bearer ${one}`), check)).toBeUndefined();
+    expect(checkHead(head(`Bearer ${two}`), check)).toBeUndefined();
+  });
+
+  it("refuses a token too short to be real, even if the function accepts it", () => {
+    expect(checkHead(head("Bearer short"), check)?.status).toBe(401);
+  });
+
+  it("refuses other tokens, a missing one, and web pages", () => {
+    expect(checkHead(head("Bearer someone-else"), check)?.status).toBe(401);
+    expect(checkHead(head(), check)?.status).toBe(401);
+    const fromPage = {
+      ...head(`Bearer ${one}`),
+      headers: { authorization: `Bearer ${one}`, origin: "https://x" },
+    };
+    expect(checkHead(fromPage, check)?.status).toBe(403);
   });
 });

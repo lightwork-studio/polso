@@ -8,6 +8,10 @@ export const ADMIN_USAGE = `Usage: polso-server admin <command>
   devices list            paired phones and when each was last seen
   devices revoke <id>     unpair one phone; its token stops working at once
   devices revoke --all    unpair every phone and cancel unused pairing links
+  agents add <name>       a token for an agent to read the data over MCP (shown once)
+  agents list             agents and when each last read
+  agents revoke <id>      take one agent's token away; it stops working at once
+  agents revoke --all     take every agent's token away
   status                  how much Health data the server holds
   erase --yes             delete every copied Health record (phones stay paired)
 
@@ -71,10 +75,65 @@ export function runAdmin(
       }
       break;
     }
+    case "agents": {
+      if (sub === "add") {
+        const name = args.slice(2).join(" ").trim();
+        if (name === "" || name.length > 100 || /\p{Cc}/u.test(name)) {
+          throw new UsageError("Name the agent in 1 to 100 characters: agents add <name>.");
+        }
+        const token = newSecret();
+        const id = store.addAgent(name, hashSecret(token), now);
+        const publicUrl = config.publicUrl ?? store.setting("publicUrl") ?? "https://YOUR-SERVER";
+        const url = `${publicUrl}/mcp`;
+        const json = JSON.stringify(
+          {
+            mcpServers: {
+              polso: { type: "http", url, headers: { Authorization: `Bearer ${token}` } },
+            },
+          },
+          null,
+          2,
+        );
+        return [
+          `Agent ${id} (${name}) can read your Health data with this token. It isn't shown again:`,
+          "",
+          token,
+          "",
+          "Claude Code:",
+          `claude mcp add --transport http polso ${url} --header "Authorization: Bearer ${token}"`,
+          "",
+          "Other MCP clients:",
+          json,
+        ].join("\n");
+      }
+      if (sub === "list") {
+        const agents = store.agents();
+        if (agents.length === 0) return "No agents.";
+        return agents
+          .map(
+            (a) =>
+              `${a.id}\t${a.name}\tadded ${a.createdAt.toISOString()}\tlast read ${
+                a.lastUsedAt?.toISOString() ?? "never"
+              }`,
+          )
+          .join("\n");
+      }
+      if (sub === "revoke") {
+        if (arg === "--all") return `Revoked ${store.revokeAgent()} agent token(s).`;
+        const id = Number(arg);
+        if (!Number.isInteger(id) || id <= 0) {
+          throw new UsageError("Name the agent by its id from `agents list`, or --all.");
+        }
+        if (store.revokeAgent(id) === 0) throw new UsageError(`No agent ${id}.`);
+        return `Revoked agent ${id}.`;
+      }
+      break;
+    }
     case "status": {
       const c = store.counts();
       return [
         `Devices: ${store.devices().length}`,
+        `Agents: ${store.agents().length}`,
         `Samples: ${c.samples}`,
         `Workouts: ${c.workouts}`,
         `Daily statistics: ${c.dailyStats}`,
