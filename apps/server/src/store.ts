@@ -66,7 +66,9 @@ export const MIGRATIONS: readonly string[] = [
     value TEXT NOT NULL
   );
   `,
-  // 2: agent tokens for the MCP endpoint.
+  // 2: agent tokens for the MCP endpoint, and what its reads need: records by start time, as
+  // HealthKit orders them, and each type's longest record, which bounds how far back a record
+  // that overlaps a time range can start.
   `
   CREATE TABLE agents (
     id INTEGER PRIMARY KEY,
@@ -75,6 +77,16 @@ export const MIGRATIONS: readonly string[] = [
     created_at INTEGER NOT NULL,
     last_used_at INTEGER
   );
+  DROP INDEX samples_by_type_and_end;
+  CREATE INDEX samples_by_type_and_start ON samples (type, start_ms);
+  DROP INDEX workouts_by_end;
+  CREATE INDEX workouts_by_start ON workouts (start_ms);
+  CREATE TABLE type_spans (
+    type TEXT PRIMARY KEY,
+    max_span_ms INTEGER NOT NULL
+  );
+  INSERT INTO type_spans (type, max_span_ms)
+    SELECT type, max(end_ms - start_ms) FROM samples GROUP BY type;
   `,
 ];
 
@@ -290,6 +302,17 @@ export class Store {
     });
   }
 
+  /**
+   * The longest record of a type ever stored, in milliseconds. A record overlapping a time range
+   * starts at most this long before it. Deletions don't shrink it, which only widens the search.
+   */
+  maxSpan(type: string): number {
+    const row = this.db.prepare("SELECT max_span_ms FROM type_spans WHERE type = ?").get(type) as
+      | { max_span_ms: number }
+      | undefined;
+    return row?.max_span_ms ?? 0;
+  }
+
   // --- Agents ---
 
   /** Adds an agent with the hash of its token. Returns its id. */
@@ -359,7 +382,12 @@ export class Store {
            (id, type, start_ms, end_ms, number_value, text_value, unit, source)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
+      const span = this.db.prepare(
+        `INSERT INTO type_spans (type, max_span_ms) VALUES (?, ?)
+         ON CONFLICT (type) DO UPDATE SET max_span_ms = max(max_span_ms, excluded.max_span_ms)`,
+      );
       for (const s of changes.samples) {
+        span.run(s.type, s.end.getTime() - s.start.getTime());
         sample.run(
           s.id,
           s.type,
@@ -444,7 +472,7 @@ export class Store {
     const erased = this.transaction(() => {
       if (tokenHash !== undefined && !this.paired(tokenHash)) return false;
       this.db.exec(
-        "DELETE FROM samples; DELETE FROM workouts; DELETE FROM daily_stats; DELETE FROM characteristics;",
+        "DELETE FROM samples; DELETE FROM type_spans; DELETE FROM workouts; DELETE FROM daily_stats; DELETE FROM characteristics;",
       );
       const clear = this.db.prepare("DELETE FROM settings WHERE key = ?");
       for (const key of DATA_SETTINGS) clear.run(key);

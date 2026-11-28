@@ -70,7 +70,7 @@ The body holds what changed since the phone's last successful upload. Every fiel
       "type": "HKCategoryTypeIdentifierSleepAnalysis",
       "start": "2026-11-26T22:40:00.000Z",
       "end": "2026-11-27T00:10:00.000Z",
-      "value": "asleepCore", // The value's name for categories
+      "value": "asleepCore", // The value's name for categories ("recorded" for notApplicable)
       "source": "Apple Watch"
     }
   ],

@@ -25,8 +25,15 @@ Agents send the token as `Authorization: Bearer <token>`. Requests without a val
 including a phone's device token, get `401` before the server reads their body, and requests
 from web pages (with an `Origin` header) get `403`.
 
-What agents read is text your phones sent, such as source names. Agents should treat it as data,
-not as instructions.
+Daily statistics cover whole days: asked for a range that ends partway through a day, the
+server returns that whole day's value, where the phone would stop at the given time.
+
+What agents read is text your phones sent, such as source names from the apps that wrote to
+Health. The server tells agents to treat it as data, not as instructions.
+
+To go back to the server version before agent tokens, stop the server, then run
+`sqlite3 polso.db "DROP TABLE agents; DROP TABLE type_spans; DROP INDEX samples_by_type_and_start; DROP INDEX workouts_by_start; CREATE INDEX samples_by_type_and_end ON samples (type, end_ms); CREATE INDEX workouts_by_end ON workouts (end_ms); PRAGMA user_version = 1;"`
+in the data directory. That older version refuses a database it doesn't know.
 
 ## What it stores
 

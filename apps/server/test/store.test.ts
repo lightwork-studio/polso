@@ -172,6 +172,8 @@ describe("upgrading", () => {
     expect(store.devices().map((d) => d.name)).toEqual(["iPhone"]);
     expect(store.generation()).toBe("g1");
     expect(store.agents()).toEqual([]);
+    // The longest record per type is filled in from the records already there.
+    expect(store.maxSpan("HKQuantityTypeIdentifierHeartRate")).toBe(1);
     store.addAgent("Claude", "agent-hash", NOW);
     expect(store.agentFor("agent-hash", NOW)).toBe(true);
     store.close();
