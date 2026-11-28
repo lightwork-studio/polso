@@ -48,7 +48,9 @@ export type SyncErrorKind =
   /** Try again later: the server is busy, unreachable, or the request timed out. */
   | "unavailable"
   /** The server refused the request as it was; trying again won't help. */
-  | "refused";
+  | "refused"
+  /** The run was stopped on purpose: the person unpaired or paired elsewhere. */
+  | "stopped";
 
 export class SyncError extends Error {
   readonly kind: SyncErrorKind;
@@ -62,9 +64,9 @@ export interface SyncClient {
   /** Trades a pairing code for a device token. */
   pair(code: string, device: string): Promise<string>;
   /** Sends changes; returns the server's data generation. */
-  upload(changes: Upload): Promise<string>;
+  upload(changes: Upload, signal?: AbortSignal): Promise<string>;
   /** Erases the server's copy; returns the new generation. */
-  reset(): Promise<string>;
+  reset(signal?: AbortSignal): Promise<string>;
 }
 
 /** How long one request may take, an upload of about a megabyte included. */
@@ -72,10 +74,17 @@ export const REQUEST_TIMEOUT_MS = 60_000;
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
+/** Longest server message shown on screen. A stranger's server chooses this text. */
+const MAX_MESSAGE = 200;
+
 async function errorText(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { error?: unknown };
-    if (typeof body.error === "string") return body.error;
+    if (typeof body.error === "string" && body.error.trim() !== "") {
+      // Marked as the server's words, and kept short: it's shown as is.
+      const text = body.error.trim();
+      return `The server said: ${text.length > MAX_MESSAGE ? `${text.slice(0, MAX_MESSAGE)}…` : text}`;
+    }
   } catch {
     // Not the server's JSON: a proxy's page, say.
   }
@@ -87,7 +96,13 @@ export function httpClient(
   token: () => string | undefined,
   fetchFn: Fetch = fetch,
 ): SyncClient {
-  async function post(path: string, body: unknown, authorized: boolean): Promise<unknown> {
+  async function post(
+    path: string,
+    body: unknown,
+    authorized: boolean,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    if (signal?.aborted) throw new SyncError("stopped", "Stopped.");
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (authorized) {
       const value = token();
@@ -96,6 +111,8 @@ export function httpClient(
     }
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS);
+    const stop = () => abort.abort();
+    signal?.addEventListener("abort", stop);
     let response: Response;
     try {
       response = await fetchFn(`${server}${path}`, {
@@ -103,11 +120,15 @@ export function httpClient(
         headers,
         body: JSON.stringify(body),
         signal: abort.signal,
+        // A redirect could carry the token and the data to another host, or to plain http.
+        redirect: "error",
       });
     } catch {
+      if (signal?.aborted) throw new SyncError("stopped", "Stopped.");
       throw new SyncError("unavailable", "Couldn't reach the server.");
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", stop);
     }
     if (response.ok) {
       try {
@@ -140,7 +161,8 @@ export function httpClient(
       }
       return body.token;
     },
-    upload: async (changes) => generationOf(await post("/sync/v1/changes", changes, true)),
-    reset: async () => generationOf(await post("/sync/v1/reset", {}, true)),
+    upload: async (changes, signal) =>
+      generationOf(await post("/sync/v1/changes", changes, true, signal)),
+    reset: async (signal) => generationOf(await post("/sync/v1/reset", {}, true, signal)),
   };
 }

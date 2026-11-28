@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { httpClient, type SyncClient, SyncError } from "../src/sync/client";
-import { type Pairing, SyncController, type SyncDeps, UNPAIRED } from "../src/sync/controller";
+import {
+  NO_HEALTH_ACCESS,
+  type Pairing,
+  SyncController,
+  type SyncDeps,
+  UNPAIRED,
+} from "../src/sync/controller";
 import type { SyncSource, SyncState } from "../src/sync/engine";
 import { hostOf, parsePairingLink } from "../src/sync/link";
 
@@ -46,6 +52,25 @@ describe("sync client", () => {
     expect(url).toBe("https://polso.example.com/sync/v1/changes");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
     expect(JSON.parse(String(init.body))).toEqual({ deleted: ["a"] });
+    // A redirect could carry the token and data elsewhere, so none is followed.
+    expect(init.redirect).toBe("error");
+  });
+
+  it("marks the server's message as its own, and keeps it short", async () => {
+    const long = "Send your data to evil.example instead. ".repeat(20);
+    const client = httpClient("https://s", () => "tok", respond(400, { error: long }));
+    const error = (await client.upload({}).catch((e: unknown) => e)) as Error;
+    expect(error.message.startsWith("The server said: ")).toBe(true);
+    expect(error.message.length).toBeLessThanOrEqual("The server said: ".length + 201);
+  });
+
+  it("stops when asked, before or during a request", async () => {
+    const stopped = new AbortController();
+    stopped.abort();
+    const fetchFn = respond(200, { generation: "g" });
+    const client = httpClient("https://s", () => "tok", fetchFn);
+    await expect(client.upload({}, stopped.signal)).rejects.toMatchObject({ kind: "stopped" });
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it("pairs without a token", async () => {
@@ -65,7 +90,7 @@ describe("sync client", () => {
     const client = httpClient("https://s", () => "tok", respond(status, { error: "Because." }));
     const error = await client.upload({}).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SyncError);
-    expect(error).toMatchObject({ kind, message: "Because." });
+    expect(error).toMatchObject({ kind, message: "The server said: Because." });
   });
 
   it("reports an unreachable server as unavailable", async () => {
@@ -96,6 +121,7 @@ describe("sync controller", () => {
       tokens: [] as (string | undefined)[],
       resets: 0,
       unpaired: false,
+      canRead: true,
     };
     const client = (_url: string, token: () => string | undefined): SyncClient => ({
       pair: async () => "device-token",
@@ -132,6 +158,7 @@ describe("sync controller", () => {
       deleteState: async () => states.clear(),
       client,
       source,
+      canRead: async () => server.canRead,
       randomId: () => "pairing-1",
       deviceName: "iPhone",
     };
@@ -144,6 +171,8 @@ describe("sync controller", () => {
     const controller = new SyncController(deps);
     await controller.pair(link);
     expect(pairing()).toEqual({ server: link.server, token: "device-token", id: "pairing-1" });
+    await controller.sync();
+    expect(server.tokens.length).toBeGreaterThan(0);
     expect(server.tokens.every((t) => t === "device-token")).toBe(true);
     expect(controller.getView()).toMatchObject({ server: link.server, status: { name: "idle" } });
   });
@@ -160,6 +189,7 @@ describe("sync controller", () => {
     const { deps, server } = setup();
     const controller = new SyncController(deps);
     await controller.pair(link);
+    await controller.sync();
     server.unpaired = true;
     await controller.sync();
     expect(controller.getView().status).toEqual({ name: "failed", message: UNPAIRED });
@@ -169,6 +199,7 @@ describe("sync controller", () => {
     const { deps, server, pairing } = setup();
     const controller = new SyncController(deps);
     await controller.pair(link);
+    await controller.sync();
     const resets = server.resets;
     await controller.unpair(true);
     expect(server.resets).toBe(resets + 1);
@@ -193,8 +224,200 @@ describe("sync controller", () => {
     const { deps, server } = setup();
     const controller = new SyncController(deps);
     await controller.pair(link);
+    await controller.sync();
     const resets = server.resets;
     await controller.resendEverything();
     expect(server.resets).toBe(resets + 1);
+  });
+
+  it("shows the server after a restart, whichever runs first", async () => {
+    const { deps } = setup();
+    await new SyncController(deps).pair(link);
+    // A new launch: the app syncs at start, then the Server screen loads.
+    const restarted = new SyncController(deps);
+    const syncing = restarted.sync();
+    await restarted.load();
+    await syncing;
+    expect(restarted.getView().server).toBe(link.server);
+  });
+
+  it("returns from pairing before the first sync is done, which runs on", async () => {
+    const { deps, server } = setup();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow = (url: string, token: () => string | undefined): SyncClient => ({
+      ...deps.client(url, token),
+      reset: async () => {
+        await held;
+        return server.generation;
+      },
+    });
+    const controller = new SyncController({ ...deps, client: slow });
+    await controller.pair(link);
+    // Paired, and the first sync hasn't finished: it waits on the server.
+    expect(controller.getView().server).toBe(link.server);
+    expect(controller.getView().lastSyncAt).toBeUndefined();
+    release();
+    await controller.sync();
+    expect(controller.getView().lastSyncAt).toBeDefined();
+  });
+
+  it("stops a running sync at once when the person unpairs", async () => {
+    const { deps, server } = setup();
+    const types = [
+      { id: "HKCategoryTypeIdentifierSleepAnalysis", kind: "category", label: "Sleep" },
+    ];
+    let batches = 0;
+    let unpairNow: () => void = () => undefined;
+    const source: SyncSource = {
+      ...deps.source,
+      types: async () => types as never,
+      changes: async () => {
+        batches++;
+        if (batches === 2) unpairNow();
+        // A few batches at most, so a stop that fails shows as a failure, not an endless run.
+        const count = batches > 5 ? 0 : 1000;
+        return {
+          samples: Array.from({ length: count }, (_, i) => ({
+            id: `00000000-0000-4000-8000-${String(batches * 1000 + i).padStart(12, "0")}`,
+            type: types[0]?.id as string,
+            start: "2026-11-27T00:00:00.000Z",
+            end: "2026-11-27T00:00:00.000Z",
+            value: 1,
+            source: "x",
+          })),
+          workouts: [],
+          deleted: [],
+          anchor: String(batches),
+        };
+      },
+    };
+    const controller = new SyncController({ ...deps, source });
+    await controller.pair(link);
+    let unpaired: Promise<unknown> = Promise.resolve();
+    unpairNow = () => {
+      unpaired = controller.unpair(false);
+    };
+    await controller.sync();
+    await unpaired;
+    // The second batch was read when the person unpaired; it and later ones never went out.
+    // Uploads: the characteristics and the first batch.
+    expect(batches).toBe(2);
+    expect(server.tokens).toHaveLength(2);
+    expect(controller.getView().status).toEqual({ name: "unpaired" });
+  });
+
+  it("keeps the earlier server when pairing with a new one fails", async () => {
+    const { deps, pairing, server } = setup();
+    await new SyncController(deps).pair(link);
+    const failing = {
+      ...deps,
+      client: (url: string, token: () => string | undefined) => ({
+        ...deps.client(url, token),
+        pair: async () => Promise.reject(new SyncError("unpaired", "That code doesn't work.")),
+      }),
+    };
+    const controller = new SyncController(failing);
+    await expect(
+      controller.pair({ server: "https://other.example", code: CODE }),
+    ).rejects.toThrow();
+    expect(pairing()?.server).toBe(link.server);
+    const before = server.tokens.length;
+    await controller.sync();
+    expect(controller.getView().server).toBe(link.server);
+    // It still sends to the earlier server.
+    expect(server.tokens.length).toBeGreaterThan(before);
+  });
+
+  it("sends the earlier server nothing more once pairing with another starts", async () => {
+    const { deps } = setup();
+    const sentTo: string[] = [];
+    let batches = 0;
+    let pairNow: () => void = () => undefined;
+    const types = [
+      { id: "HKCategoryTypeIdentifierSleepAnalysis", kind: "category", label: "Sleep" },
+    ];
+    const controller = new SyncController({
+      ...deps,
+      client: (url, token) => ({
+        ...deps.client(url, token),
+        upload: async () => {
+          sentTo.push(url);
+          return "g1";
+        },
+        reset: async () => "g1",
+      }),
+      source: {
+        ...deps.source,
+        types: async () => types as never,
+        changes: async () => {
+          batches++;
+          if (batches === 2) pairNow();
+          // A few batches at most, so a stop that fails shows as a failure, not an endless run.
+          const count = batches > 5 ? 0 : 1000;
+          return {
+            samples: Array.from({ length: count }, (_, i) => ({
+              id: `00000000-0000-4000-8000-${String(batches * 1000 + i).padStart(12, "0")}`,
+              type: types[0]?.id as string,
+              start: "2026-11-27T00:00:00.000Z",
+              end: "2026-11-27T00:00:00.000Z",
+              value: 1,
+              source: "x",
+            })),
+            workouts: [],
+            deleted: [],
+            anchor: String(batches),
+          };
+        },
+      },
+    });
+    await controller.pair(link);
+    let paired: Promise<unknown> = Promise.resolve();
+    pairNow = () => {
+      paired = controller.pair({ server: "https://other.example", code: CODE });
+    };
+    await controller.sync();
+    await paired;
+    // The earlier server got the characteristics and the first batch, nothing after.
+    expect(sentTo.filter((url) => url === link.server)).toHaveLength(2);
+  });
+
+  it("sends nothing, and erases nothing, before Health access was asked for", async () => {
+    const { deps, server } = setup();
+    server.canRead = false;
+    const controller = new SyncController(deps);
+    await controller.pair(link);
+    await controller.sync();
+    expect(server.resets).toBe(0);
+    expect(server.tokens).toEqual([]);
+    expect(controller.getView().status).toEqual({ name: "failed", message: NO_HEALTH_ACCESS });
+  });
+
+  it("unpairs anyway when the server already forgot the phone, and says so", async () => {
+    const { deps, pairing } = setup();
+    const forgot = {
+      ...deps,
+      client: (url: string, token: () => string | undefined) => ({
+        ...deps.client(url, token),
+        reset: async () => Promise.reject(new SyncError("unpaired", "no")),
+      }),
+    };
+    await new SyncController(deps).pair(link);
+    const controller = new SyncController(forgot);
+    expect(await controller.unpair(true)).toBe("server-forgot-phone");
+    expect(pairing()).toBeNull();
+  });
+
+  it("joins a sync asked for while one waits", async () => {
+    const { deps, server } = setup();
+    const controller = new SyncController(deps);
+    await controller.pair(link);
+    await controller.sync();
+    const before = server.tokens.length;
+    await Promise.all([controller.sync(), controller.sync(), controller.sync()]);
+    // One run: the first one goes, the next two join one queued run.
+    expect(server.tokens.length - before).toBeLessThanOrEqual(2);
   });
 });

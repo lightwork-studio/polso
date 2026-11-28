@@ -85,3 +85,13 @@ export const queryStatisticsCollectionForQuantity = vi.fn(
     _options: unknown,
   ): Promise<unknown[]> => [],
 );
+const noChanges = { samples: [] as unknown[], deletedSamples: [] as unknown[], newAnchor: "a1" };
+export const queryQuantitySamplesWithAnchor = vi.fn(
+  async (_id: string, _options: unknown): Promise<unknown> => noChanges,
+);
+export const queryCategorySamplesWithAnchor = vi.fn(
+  async (_id: string, _options: unknown): Promise<unknown> => noChanges,
+);
+export const queryWorkoutSamplesWithAnchor = vi.fn(
+  async (_options: unknown): Promise<unknown> => ({ ...noChanges, workouts: [] }),
+);

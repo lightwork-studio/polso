@@ -1,10 +1,11 @@
 import type { HealthType } from "@polso/mcp/health/catalog";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type SampleUpload, SyncError, type Upload } from "../src/sync/client";
+import { type SampleUpload, type SyncClient, SyncError, type Upload } from "../src/sync/client";
 import {
   BATCH,
   type Changes,
   DAYS_PER_ENTRY,
+  DELETIONS_PER_UPLOAD,
   dayRanges,
   RECENT_DAYS,
   SyncEngine,
@@ -85,7 +86,7 @@ class FakeServer {
   resets = 0;
   failAfter?: number;
   ids = new Set<string>();
-  client = {
+  client: SyncClient = {
     pair: async () => "token",
     upload: async (changes: Upload) => {
       if (this.failAfter !== undefined && this.uploads.length >= this.failAfter) {
@@ -234,6 +235,70 @@ describe("sync engine", () => {
     expect(server.resets).toBe(0);
     expect(server.ids.has(sample(1, STEPS, "x").id)).toBe(true);
     expect(store.state.generation).toBe(server.generation);
+  });
+});
+
+describe("trouble", () => {
+  it("skips a type the server refuses, keeps its place, and sends the others", async () => {
+    health.typeList = [STEPS, SLEEP];
+    health.add(STEPS, [sample(1, STEPS, "2026-11-20")]);
+    health.add(SLEEP, [sample(2, SLEEP, "2026-11-20")]);
+    const upload = server.client.upload;
+    server.client.upload = async (changes, signal) => {
+      if (changes.samples?.some((s) => s.type === STEPS.id)) {
+        throw new SyncError("refused", "The server said: no.");
+      }
+      return upload(changes, signal);
+    };
+    const result = await engine().run();
+    expect(result.failed).toEqual([{ label: "Steps", message: "The server said: no." }]);
+    expect(store.state.anchors[STEPS.id]).toBeUndefined();
+    expect(server.ids.has(sample(2, SLEEP, "x").id)).toBe(true);
+    expect(store.state.lastSyncAt).toBe(NOW.toISOString());
+  });
+
+  it("stops the whole run when the server can't be reached", async () => {
+    health.add(STEPS, [sample(1, STEPS, "2026-11-20")]);
+    health.add(SLEEP, [sample(2, SLEEP, "2026-11-20")]);
+    server.failAfter = 1;
+    await expect(engine().run()).rejects.toMatchObject({ kind: "unavailable" });
+    expect(store.state.anchors).toEqual({});
+  });
+
+  it("sends many deletions in several uploads", async () => {
+    health.typeList = [SLEEP];
+    health.add(
+      SLEEP,
+      [],
+      Array.from({ length: 12_000 }, (_, i) => `gone-${i}`),
+    );
+    // HealthKit may hand over more deletions than the batch size in one go.
+    const changes = health.changes.bind(health);
+    health.changes = async (type, anchor) => changes(type, anchor, 20_000);
+    await engine().run();
+    const counts = server.uploads.map((u) => u.deleted?.length ?? 0).filter((n) => n > 0);
+    expect(counts).toEqual([DELETIONS_PER_UPLOAD, DELETIONS_PER_UPLOAD, 2_000]);
+  });
+
+  it("sends a batch's daily statistics in uploads of their own", async () => {
+    health.add(STEPS, [sample(1, STEPS, "2026-11-20")]);
+    await engine().run();
+    server.uploads = [];
+    health.add(STEPS, [sample(2, STEPS, "2026-11-26")]);
+    await engine().run();
+    expect(server.uploads.some((u) => u.samples && u.dailyStats)).toBe(false);
+    expect(server.uploads.some((u) => u.dailyStats)).toBe(true);
+  });
+
+  it("gives up, saying so, when the generation keeps changing", async () => {
+    health.add(STEPS, [sample(1, STEPS, "2026-11-20")]);
+    let n = 0;
+    server.client.upload = async () => `g-changing-${n++}`;
+    await expect(engine().run()).rejects.toThrow("kept changing");
+  });
+
+  it("works out days for any year", () => {
+    expect(dayRanges("0050-01-01", "0050-01-03")).toEqual([["0050-01-01", "0050-01-03"]]);
   });
 });
 

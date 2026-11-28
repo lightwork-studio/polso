@@ -6,6 +6,9 @@ import { agentAccess } from "../src/mcp/runtime";
 import { syncController } from "../src/sync/runtime";
 import { useColors } from "../src/ui/theme";
 
+// A pairing link opened from a cold start still has the Health list to go back to.
+export const unstable_settings = { initialRouteName: "index" };
+
 export default function RootLayout() {
   const colors = useColors();
 

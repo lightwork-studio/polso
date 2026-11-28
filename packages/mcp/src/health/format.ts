@@ -54,5 +54,6 @@ export function formatDuration(seconds: number): string {
 /** The ISO calendar date in the phone's time zone, e.g. "2026-11-25". */
 export function formatDay(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const year = String(date.getFullYear()).padStart(4, "0");
+  return `${year}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }

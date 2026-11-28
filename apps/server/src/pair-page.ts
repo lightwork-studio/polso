@@ -16,7 +16,7 @@ if (ok) {
   for (const a of document.querySelectorAll("a[data-scheme]")) {
     a.href = a.dataset.scheme + "://pair" + query;
   }
-  document.getElementById("code").textContent = code;
+  document.getElementById("link").textContent = location.origin + "/pair#" + code;
 }
 `;
 
@@ -45,8 +45,8 @@ export const PAIR_PAGE = `<!doctype html>
   <a class="open" data-scheme="polso" href="#">Open in Polso</a>
   <a class="open" data-scheme="polso-preview" href="#">Open in Polso Preview</a>
   <a class="open" data-scheme="polso-dev" href="#">Open in Polso Dev</a>
-  <p>Or paste this code into Polso, with this server's address:</p>
-  <p><code id="code"></code></p>
+  <p>Or copy this link and paste it in Polso, under Your server:</p>
+  <p><code id="link"></code></p>
 </div>
 <div id="broken" hidden>
   <p>This link has no pairing code. Make a new one with <code>polso-server admin pair</code>.</p>

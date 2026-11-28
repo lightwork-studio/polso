@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SyncError } from "../src/sync/client";
 import { hostOf, parsePairingLink } from "../src/sync/link";
@@ -19,6 +19,10 @@ export default function Pair() {
       code: String(params.code ?? ""),
     })}`,
   );
+  const current = useSyncExternalStore(syncController.subscribe, syncController.getView).server;
+  useEffect(() => {
+    void syncController.load().catch(() => undefined);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
   const text = { color: colors.text };
@@ -42,6 +46,7 @@ export default function Pair() {
     setBusy(true);
     setProblem(undefined);
     syncController.pair(link).then(
+      // The first sync runs on; the Server screen shows how far it got.
       () => router.replace("/server"),
       (error: unknown) => {
         setBusy(false);
@@ -64,11 +69,21 @@ export default function Pair() {
       </Text>
       <Text style={[styles.note, muted]}>
         Only pair with a server you run or trust: whoever runs it can read everything Polso sends.
-        Polso pairs with one server at a time; pairing replaces any earlier one.
+        Polso pairs with one server at a time.
       </Text>
+      {current && current !== link.server ? (
+        <Text style={[styles.note, { color: colors.accent }]}>
+          This replaces {hostOf(current)}, which Polso sends your data to now.
+        </Text>
+      ) : null}
       {problem ? <Text style={[styles.note, { color: colors.accent }]}>{problem}</Text> : null}
       <Button label={busy ? "Pairing…" : "Pair"} onPress={pair} colors={colors} disabled={busy} />
-      <Button label="Cancel" onPress={() => router.back()} colors={colors} secondary />
+      <Button
+        label="Cancel"
+        onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
+        colors={colors}
+        secondary
+      />
     </ScrollView>
   );
 }

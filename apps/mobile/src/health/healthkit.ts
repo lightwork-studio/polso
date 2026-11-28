@@ -274,6 +274,11 @@ export const healthQueries: HealthQueries = {
 
 // --- Reads behind sync to a server ---
 
+/** Text for the server, which takes 1 to 200 characters. */
+const serverText = (text: string) => (text.trim() === "" ? "unknown" : text.slice(0, 200));
+const serverValue = (value: number | string) =>
+  typeof value === "string" ? serverText(value) : value;
+
 /*
  * HealthKit as sync reads it: anchored queries for what changed, and HealthKit's own daily
  * statistics. Records are shaped exactly as the phone's MCP endpoint reports them (units, value
@@ -312,8 +317,8 @@ export const healthKitSync: SyncSource = {
           start: iso(s.startDate),
           end: iso(s.endDate),
           value: agentValue(s.quantity, s.unit),
-          unit: s.unit,
-          source: sourceName(s),
+          unit: serverText(s.unit),
+          source: serverText(sourceName(s)),
         })),
         workouts: [],
         deleted: result.deletedSamples.map((d) => d.uuid),
@@ -331,8 +336,8 @@ export const healthKitSync: SyncSource = {
           type: type.id,
           start: iso(s.startDate),
           end: iso(s.endDate),
-          value: categoryValue(type, Number(s.value)),
-          source: sourceName(s),
+          value: serverValue(categoryValue(type, Number(s.value))),
+          source: serverText(sourceName(s)),
         })),
         workouts: [],
         deleted: result.deletedSamples.map((d) => d.uuid),
@@ -344,17 +349,23 @@ export const healthKitSync: SyncSource = {
       samples: [],
       workouts: result.workouts.map((w) => ({
         id: w.uuid,
-        activity: WorkoutActivityType[w.workoutActivityType] ?? "other",
+        activity: serverText(WorkoutActivityType[w.workoutActivityType] ?? "other"),
         start: iso(w.startDate),
         end: iso(w.endDate),
         durationMinutes: w.duration.quantity / 60,
         ...(w.totalEnergyBurned && {
-          energy: { value: w.totalEnergyBurned.quantity, unit: w.totalEnergyBurned.unit },
+          energy: {
+            value: w.totalEnergyBurned.quantity,
+            unit: serverText(w.totalEnergyBurned.unit),
+          },
         }),
         ...(w.totalDistance && {
-          distance: { value: w.totalDistance.quantity, unit: w.totalDistance.unit },
+          distance: {
+            value: w.totalDistance.quantity,
+            unit: serverText(w.totalDistance.unit),
+          },
         }),
-        source: sourceName(w),
+        source: serverText(sourceName(w)),
       })),
       deleted: result.deletedSamples.map((d) => d.uuid),
       anchor: result.newAnchor,
@@ -386,7 +397,8 @@ export const healthKitSync: SyncSource = {
     const values: Record<string, string | null> = {};
     for (const type of HEALTH_TYPES.filter((t) => t.kind === "characteristic")) {
       try {
-        values[type.id] = (await healthQueries.characteristic(type)) ?? null;
+        const value = await healthQueries.characteristic(type);
+        values[type.id] = value === undefined ? null : serverText(value);
       } catch {
         // Not readable (not allowed, or not on this iOS version): leave it out.
       }
