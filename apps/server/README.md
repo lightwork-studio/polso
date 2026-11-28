@@ -1,0 +1,110 @@
+# Polso server
+
+The self-hosted half of Polso: one Node process and one SQLite database that keep a copy of
+your Health data. Your phone sends what changed in HealthKit, as described in the
+[sync protocol](../../docs/sync-protocol.md).
+
+One server serves one person. Pair your own phones with it, and nobody else's.
+
+Development preview: nothing is ready to install yet, and the MCP endpoint for agents isn't
+here yet.
+
+## What it stores
+
+A copy of the Health records your phone can read and syncs: quantity and category samples
+(heart rate, steps, sleep stages and so on), workouts, HealthKit's daily statistics, and profile
+values such as blood type. It also stores the hashes of pairing codes and device tokens, never
+the codes or tokens themselves.
+
+The server has to read the data to answer agents, so it can't be end-to-end encrypted. It's
+protected by the server's disk and file permissions: the data directory and everything in it is
+readable only by the server's user. Run the server on a machine you control.
+
+## Run
+
+```sh
+POLSO_DATA=./data POLSO_PUBLIC_URL=https://polso.example.com pnpm --filter @polso/server start
+```
+
+| Setting            | Meaning                                                                   |
+| ------------------ | ------------------------------------------------------------------------- |
+| `POLSO_DATA`       | Directory for the database (default `./data`)                             |
+| `POLSO_PUBLIC_URL` | The server's https address, as phones reach it, for pairing links         |
+| `POLSO_PAIRING`    | `off` stops pairing new phones; paired phones keep syncing (default `on`) |
+| `HOST`, `PORT`     | The listener (default `127.0.0.1:8788`). Put HTTPS in front of it         |
+
+The server speaks plain HTTP on the address it listens on. Put a reverse proxy with HTTPS in
+front of it, or reach it over Tailscale (`tailscale serve`), so tokens and Health data never
+cross a network unencrypted. One server uses a data directory at a time, and a second refuses to
+start while the first runs. Keep the data directory on a local disk.
+
+## Pair a phone and manage the data
+
+`polso-server admin` works on the same database while the server runs. Run it as the server's
+user, with the same `POLSO_DATA`:
+
+```sh
+polso-server admin pair                  # one-time pairing link, valid 15 minutes
+polso-server admin devices list          # paired phones and when each was last seen
+polso-server admin devices revoke <id>   # unpair one phone; its token stops working at once
+polso-server admin devices revoke --all  # the off switch: every phone
+polso-server admin status                # how much Health data the server holds
+polso-server admin erase --yes           # delete every copied Health record
+```
+
+Open the pairing link on the iPhone, or show it as a QR code for the phone's camera
+(`qrencode -t ansiutf8 '<link>'`). The link opens a page on the server that hands the code to
+Polso. The code is in the link's fragment, which browsers don't send, so it stays out of access
+logs.
+
+**Erase** deletes the Health records, with SQLite's secure delete, and empties the write-ahead
+log. Paired phones stay paired and send their whole history again on their next sync. To stop
+that, revoke them first. To remove everything, stop the server and delete the data directory.
+
+There's nothing to back up: the phone holds the original data, and a new or erased server gets
+everything again from the phone.
+
+## Install
+
+`pnpm --filter @polso/server bundle` builds one file, `dist/polso-server.mjs`, that runs with
+Node 22.18 or later and nothing else:
+
+```sh
+useradd --system --user-group --home-dir /var/lib/polso --shell /usr/sbin/nologin polso
+install -m 0755 apps/server/dist/polso-server.mjs /usr/local/bin/polso-server
+```
+
+Save as `/etc/systemd/system/polso.service`:
+
+```ini
+[Unit]
+Description=Polso server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=polso
+Group=polso
+Environment=POLSO_DATA=/var/lib/polso
+Environment=POLSO_PUBLIC_URL=https://polso.example.com
+ExecStart=/usr/local/bin/polso-server serve
+StateDirectory=polso
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then `systemctl enable --now polso`, and run admin commands with
+`sudo -u polso POLSO_DATA=/var/lib/polso polso-server admin <command>`.
+
+## License
+
+The server is under the [GNU Affero General Public License v3.0 only](../../LICENSES/AGPL-3.0-only.txt).
+If you run a modified version for others, offer them its source.
