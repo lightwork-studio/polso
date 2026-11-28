@@ -53,8 +53,11 @@ export class RequestReader {
   private headBytes: number[] = [];
   private received = 0;
   private result?: ParseResult;
+  private readonly check?: HeadCheck;
 
-  constructor(private readonly check?: HeadCheck) {}
+  constructor(check?: HeadCheck) {
+    this.check = check;
+  }
 
   /** Whether the head has arrived and passed the check, so only the body is outstanding. */
   get headRead(): boolean {

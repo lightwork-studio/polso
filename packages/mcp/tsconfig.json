@@ -1,7 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // The server runs this source on Node with type stripping, so only erasable syntax and
+    // imports Node can resolve (relative ones with their .ts extension).
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "vitest.config.ts"]
 }
