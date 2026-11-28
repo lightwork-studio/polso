@@ -1,4 +1,4 @@
-import { MIN_TOKEN_LENGTH } from "./server";
+import { MIN_TOKEN_LENGTH } from "@polso/mcp/server";
 
 /** 256 bits from the system's secure random source. */
 export const TOKEN_BYTES = 32;

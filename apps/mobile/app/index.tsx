@@ -1,7 +1,7 @@
+import { GROUP_ORDER, groupOf, HEALTH_TYPES, type HealthType } from "@polso/mcp/health/catalog";
+import { formatDay } from "@polso/mcp/health/format";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, SectionList, StyleSheet, Text, View } from "react-native";
-import { GROUP_ORDER, groupOf, HEALTH_TYPES, type HealthType } from "../src/health/catalog";
-import { formatDay } from "../src/health/format";
 import { healthKit } from "../src/health/healthkit";
 import {
   needsReadAccess,

@@ -1,9 +1,9 @@
+import { HEALTH_TYPES } from "@polso/mcp/health/catalog";
+import type { HealthQueries } from "@polso/mcp/health/queries";
+import { decodeUtf8, encodeUtf8 } from "@polso/mcp/utf8";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HEALTH_TYPES } from "../src/health/catalog";
-import type { HealthQueries } from "../src/health/queries";
 import { type AccessDeps, AgentAccess } from "../src/mcp/access";
 import { type Connection, endpointListener, type Listener } from "../src/mcp/listener";
-import { decodeUtf8, encodeUtf8 } from "../src/mcp/utf8";
 
 let counter = 0;
 /** Different bytes on every call, like a real random source. */

@@ -1,4 +1,4 @@
-import { type HealthType, isRequested } from "./catalog";
+import { type HealthType, isRequested } from "@polso/mcp/health/catalog";
 
 /** What Polso shows for one type after reading it. */
 export type Preview =

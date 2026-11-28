@@ -1,5 +1,5 @@
+import { MCP_PATH } from "@polso/mcp/server";
 import { MCP_PORT } from "./access";
-import { MCP_PATH } from "./server";
 
 /** Wi-Fi addresses iOS reports when there's none to use. */
 const NO_ADDRESS = new Set(["", "0.0.0.0", "::"]);

@@ -32,7 +32,7 @@ If you distribute a fork, give it its own bundle IDs, name and icon, as describe
 
 ## Health access
 
-Polso asks to read every type in [`src/health/catalog.ts`](src/health/catalog.ts) that the phone's
+Polso asks to read every type in [`packages/mcp/src/health/catalog.ts`](../../packages/mcp/src/health/catalog.ts) that the phone's
 iOS version has, and never asks to write. Blood pressure and food are read through their
 component types (systolic and diastolic pressure, nutrients) rather than named in the request.
 Medications, vision prescriptions and clinical records need their own authorization and aren't
@@ -43,7 +43,7 @@ from "nothing recorded" and shows both as No data.
 
 The quantity and category types come from the schema in `@kingstinct/react-native-healthkit`.
 After upgrading that library, run `node scripts/health-types.mts` from this directory to refresh
-`src/health/types.generated.ts`; a test fails until you do.
+`packages/mcp/src/health/types.generated.ts`; a test fails until you do.
 
 ## Agent access
 

@@ -1,5 +1,5 @@
-import { formatDay } from "../health/format";
-import type { SleepRecord } from "../health/queries";
+import { formatDay } from "./health/format.ts";
+import type { SleepRecord } from "./health/queries.ts";
 
 export interface Night {
   /** The local date the night starts on, e.g. "2026-11-24" for the night into the 25th. */

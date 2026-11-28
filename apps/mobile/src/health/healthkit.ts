@@ -29,8 +29,13 @@ import {
   WheelchairUse,
   WorkoutActivityType,
 } from "@kingstinct/react-native-healthkit";
-import { HEALTH_TYPES, type HealthType, valueLabel } from "./catalog";
-import { formatCategory, formatDay, formatDuration, formatQuantity } from "./format";
+import { HEALTH_TYPES, type HealthType, valueLabel } from "@polso/mcp/health/catalog";
+import {
+  formatCategory,
+  formatDay,
+  formatDuration,
+  formatQuantity,
+} from "@polso/mcp/health/format";
 import {
   agentUnit,
   agentValue,
@@ -38,7 +43,7 @@ import {
   type HealthQueries,
   type SampleRecord,
   type Statistic,
-} from "./queries";
+} from "@polso/mcp/health/queries";
 import type { HealthSource, Preview } from "./reader";
 
 // The catalog holds plain strings; HealthKit's identifier types are unions of the same strings.

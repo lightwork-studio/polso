@@ -1,9 +1,9 @@
 import type { EventEmitter } from "node:events";
+import { checkHead } from "@polso/mcp/server";
+import { decodeUtf8 } from "@polso/mcp/utf8";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Listener } from "../src/mcp/listener";
-import { checkHead } from "../src/mcp/server";
 import { LISTEN_TIMEOUT_MS, listenTcp } from "../src/mcp/tcp";
-import { decodeUtf8 } from "../src/mcp/utf8";
 
 const TOKEN = "k3J9vQ2mX7pL0sR4tW8yZ1aB5cD6eF4n";
 

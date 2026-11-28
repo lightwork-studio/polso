@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HEALTH_TYPES, type HealthType } from "../src/health/catalog";
-import type { HealthQueries } from "../src/health/queries";
-import { summarizeNights } from "../src/mcp/sleep";
+import { HEALTH_TYPES, type HealthType } from "../src/health/catalog.ts";
+import type { HealthQueries } from "../src/health/queries.ts";
+import { summarizeNights } from "../src/sleep.ts";
 import {
   callTool,
   SLEEP_RECORD_LIMIT,
   shortName,
   type ToolContext,
   ToolInputError,
-} from "../src/mcp/tools";
+} from "../src/tools.ts";
 
 const now = new Date(2026, 10, 25, 12, 0);
 const DAY = 24 * 60 * 60 * 1000;

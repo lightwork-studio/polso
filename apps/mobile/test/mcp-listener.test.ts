@@ -1,8 +1,8 @@
+import type { HttpRequest, HttpResponse } from "@polso/mcp/http";
+import { checkHead } from "@polso/mcp/server";
+import { decodeUtf8, encodeUtf8 } from "@polso/mcp/utf8";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HttpRequest, HttpResponse } from "../src/mcp/http";
 import { type Connection, DEFAULT_LIMITS, endpointListener, Listener } from "../src/mcp/listener";
-import { checkHead } from "../src/mcp/server";
-import { decodeUtf8, encodeUtf8 } from "../src/mcp/utf8";
 
 const TOKEN = "k3J9vQ2mX7pL0sR4tW8yZ1aB5cD6eF4n";
 

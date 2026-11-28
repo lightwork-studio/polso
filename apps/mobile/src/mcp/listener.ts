@@ -4,8 +4,8 @@ import {
   type HttpResponse,
   RequestReader,
   serializeResponse,
-} from "./http";
-import { checkHead, type EndpointOptions, handleHttp } from "./server";
+} from "@polso/mcp/http";
+import { checkHead, type EndpointOptions, handleHttp } from "@polso/mcp/server";
 
 /** One accepted TCP connection, as the listener sees it. The TCP adapter provides it. */
 export interface Connection {

@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { HEALTH_TYPES, labelFor, valueLabel } from "@polso/mcp/health/catalog";
 import { describe, expect, it } from "vitest";
 import { outputPath, readSchema, renderHealthTypes } from "../scripts/health-types.mts";
-import { HEALTH_TYPES, labelFor, valueLabel } from "../src/health/catalog";
 
 const schema = readSchema();
 // The native bridge converts identifiers through this generated switch and throws on any other

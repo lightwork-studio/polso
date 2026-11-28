@@ -1,5 +1,5 @@
+import { MIN_TOKEN_LENGTH } from "@polso/mcp/server";
 import { describe, expect, it } from "vitest";
-import { MIN_TOKEN_LENGTH } from "../src/mcp/server";
 import { claudeCodeCommand, endpointUrl, jsonConfig } from "../src/mcp/setup";
 import { isUsableToken, newToken, TOKEN_BYTES } from "../src/mcp/token";
 

@@ -1,4 +1,4 @@
-import { CATEGORY_TYPES, QUANTITY_TYPES } from "./types.generated";
+import { CATEGORY_TYPES, QUANTITY_TYPES } from "./types.generated.ts";
 
 /** How Polso reads a type, which decides the HealthKit query behind it. */
 export type HealthKind =

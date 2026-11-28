@@ -1,7 +1,7 @@
+import { encodeUtf8 } from "@polso/mcp/utf8";
 import { NativeModules } from "react-native";
 import type TcpSocket from "react-native-tcp-socket";
 import type { Connection, Listener, Listening } from "./listener";
-import { encodeUtf8 } from "./utf8";
 
 type Socket = InstanceType<typeof TcpSocket.Socket>;
 type Server = InstanceType<typeof TcpSocket.Server>;

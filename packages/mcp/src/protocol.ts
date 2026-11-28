@@ -1,4 +1,4 @@
-import { callTool, isTool, TOOLS, type ToolContext, ToolInputError } from "./tools";
+import { callTool, isTool, TOOLS, type ToolContext, ToolInputError } from "./tools.ts";
 
 /** Newest first; the first is offered when a client asks for a version Polso doesn't know. */
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
