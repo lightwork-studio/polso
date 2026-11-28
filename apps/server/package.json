@@ -1,0 +1,18 @@
+{
+  "name": "@polso/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/main.ts serve",
+    "admin": "node src/main.ts admin",
+    "bundle": "npx --yes esbuild@0.28.2 src/main.ts --bundle --platform=node --format=esm --target=node22 --banner:js=\"#!/usr/bin/env node\" --outfile=dist/polso-server.mjs",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@polso/mcp": "workspace:*"
+  }
+}
