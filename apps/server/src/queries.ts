@@ -15,37 +15,70 @@ import { LONG_RECORD_MS, type Store } from "./store.ts";
  * HealthKit's semantics: a record belongs to a time range when it overlaps it (it ends at or after
  * the start and starts before the end), and records come newest first by start time.
  *
- * Every records query is bounded on both sides of the start-time index: a record overlapping the
- * range starts before its end, and, unless it's longer than LONG_RECORD_MS (two days), at most
- * that long before its start. The rare longer records come from a partial index of their own and
- * are merged in. So a question about one week years ago reads about that week, not every record
- * since, whatever any one record's length.
+ * Records queries read the start-time index between the range's end and two days
+ * (LONG_RECORD_MS) before its start: a record overlapping the range starts in there unless it's
+ * longer than two days. The rare longer records come from a partial index of their own and are
+ * merged in. So a query reads the records it returns, the records starting in the two days
+ * before the range, and the type's records over two days long that start before the range's
+ * end; never every record since, whatever any one record's length. (Someone who can upload, a
+ * paired phone, can still add load by uploading masses of records; that's within what it's
+ * trusted with.) Ties on start time go by rowid, which the index already holds, so no query
+ * sorts.
  */
 
 const SLEEP_ID = "HKCategoryTypeIdentifierSleepAnalysis";
 const WORKOUT_ID = "HKWorkoutTypeIdentifier";
 
-const COLUMNS = "id, start_ms, end_ms, number_value, text_value, unit, source";
+const COLUMNS = "rowid AS row_id, start_ms, end_ms, number_value, text_value, unit, source";
 // The partial index's condition, repeated word for word so SQLite uses the index.
 const LONG = `end_ms - start_ms > ${LONG_RECORD_MS}`;
 
 /** Records of a type overlapping [start, end) that start at most two days before it. */
 export const SAMPLES_SQL = `SELECT ${COLUMNS} FROM samples
   WHERE type = ? AND start_ms < ? AND start_ms >= ? AND end_ms >= ?
-  ORDER BY start_ms DESC, id DESC LIMIT ?`;
+  ORDER BY start_ms DESC, rowid DESC LIMIT ?`;
 
 /** The same, oldest first, as the sleep summary expects. */
 export const SLEEP_SQL = `SELECT ${COLUMNS} FROM samples
   WHERE type = ? AND start_ms < ? AND start_ms >= ? AND end_ms >= ?
-  ORDER BY start_ms, id LIMIT ?`;
+  ORDER BY start_ms, rowid LIMIT ?`;
 
 /** Records longer than two days overlapping [start, end), from their own index. */
 export const LONG_SQL = `SELECT ${COLUMNS} FROM samples
   WHERE type = ? AND ${LONG} AND start_ms < ? AND end_ms >= ?
-  ORDER BY start_ms DESC, id DESC LIMIT ?`;
+  ORDER BY start_ms DESC, rowid DESC LIMIT ?`;
 export const LONG_SLEEP_SQL = `SELECT ${COLUMNS} FROM samples
   WHERE type = ? AND ${LONG} AND start_ms < ? AND end_ms >= ?
-  ORDER BY start_ms, id LIMIT ?`;
+  ORDER BY start_ms, rowid LIMIT ?`;
+
+const WORKOUT_COLUMNS = `rowid AS row_id, activity, start_ms, end_ms, duration_minutes,
+  energy_value, energy_unit, distance_value, distance_unit, source`;
+/** Workouts overlapping [start, end), newest first: the usual ones, then the long ones. */
+export const WORKOUTS_SQL = `SELECT ${WORKOUT_COLUMNS} FROM workouts
+  WHERE start_ms < ? AND start_ms >= ? AND end_ms >= ?
+  ORDER BY start_ms DESC, rowid DESC LIMIT ?`;
+export const LONG_WORKOUTS_SQL = `SELECT ${WORKOUT_COLUMNS} FROM workouts
+  WHERE ${LONG} AND start_ms < ? AND end_ms >= ?
+  ORDER BY start_ms DESC, rowid DESC LIMIT ?`;
+
+/**
+ * Merges the usual and the long rows of a range, each already in order and cut to `limit`:
+ * without duplicates, in order (start time, then rowid), cut to `limit`.
+ */
+function merge<Row extends { row_id: number; start_ms: number }>(
+  usual: Row[],
+  long: Row[],
+  order: "newest" | "oldest",
+  limit: number,
+): Row[] {
+  if (long.length === 0) return usual;
+  const byRow = new Map(usual.map((row) => [row.row_id, row]));
+  for (const row of long) byRow.set(row.row_id, row);
+  const sign = order === "newest" ? -1 : 1;
+  return [...byRow.values()]
+    .sort((a, b) => sign * (a.start_ms - b.start_ms || a.row_id - b.row_id))
+    .slice(0, limit);
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 /** The local calendar day of a time, as YYYY-MM-DD, in the process's time zone. */
@@ -74,7 +107,7 @@ export function adoptTimeZone(zone: string | undefined): void {
 }
 
 interface SampleRow {
-  id: string;
+  row_id: number;
   start_ms: number;
   end_ms: number;
   number_value: number | null;
@@ -106,13 +139,7 @@ export function storeQueries(store: Store): HealthQueries {
       .prepare(usualSql)
       .all(type, end, start - LONG_RECORD_MS, start, limit) as unknown as SampleRow[];
     const long = db.prepare(longSql).all(type, end, start, limit) as unknown as SampleRow[];
-    if (long.length === 0) return usual;
-    const byId = new Map(usual.map((row) => [row.id, row]));
-    for (const row of long) byId.set(row.id, row);
-    const sign = order === "newest" ? -1 : 1;
-    return [...byId.values()]
-      .sort((a, b) => sign * (a.start_ms - b.start_ms || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)))
-      .slice(0, limit);
+    return merge(usual, long, order, limit);
   };
 
   return {
@@ -151,26 +178,10 @@ export function storeQueries(store: Store): HealthQueries {
     },
 
     async workouts(range, limit): Promise<WorkoutRecord[]> {
-      // Workouts are few, so the longest is found on the spot.
-      const longest =
-        (
-          db.prepare("SELECT max(end_ms - start_ms) AS span FROM workouts").get() as {
-            span: number | null;
-          }
-        ).span ?? 0;
-      const rows = db
-        .prepare(
-          `SELECT activity, start_ms, end_ms, duration_minutes, energy_value, energy_unit,
-                  distance_value, distance_unit, source
-           FROM workouts WHERE start_ms < ? AND start_ms >= ? AND end_ms >= ?
-           ORDER BY start_ms DESC, id DESC LIMIT ?`,
-        )
-        .all(
-          range.end.getTime(),
-          range.start.getTime() - longest,
-          range.start.getTime(),
-          limit,
-        ) as unknown as {
+      const start = range.start.getTime();
+      const end = range.end.getTime();
+      type WorkoutRow = {
+        row_id: number;
         activity: string;
         start_ms: number;
         end_ms: number;
@@ -180,7 +191,12 @@ export function storeQueries(store: Store): HealthQueries {
         distance_value: number | null;
         distance_unit: string | null;
         source: string;
-      }[];
+      };
+      const usual = db
+        .prepare(WORKOUTS_SQL)
+        .all(end, start - LONG_RECORD_MS, start, limit) as unknown as WorkoutRow[];
+      const long = db.prepare(LONG_WORKOUTS_SQL).all(end, start, limit) as unknown as WorkoutRow[];
+      const rows = merge(usual, long, "newest", limit);
       return rows.map((row) => ({
         activity: row.activity,
         start: new Date(row.start_ms),

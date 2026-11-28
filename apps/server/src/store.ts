@@ -11,7 +11,6 @@ import type { Changes } from "./changes.ts";
 
 export const DATABASE_FILE = "polso.db";
 
-/** Each entry moves the schema up one version. Never edit one that has shipped; add another. */
 /**
  * Records longer than this (two days) are kept in a partial index of their own. It's written out
  * in migration 2's index, whose WHERE a query must repeat word for word to use it.
@@ -27,11 +26,13 @@ DROP TABLE agents;
 DROP INDEX samples_by_type_and_start;
 DROP INDEX samples_long;
 DROP INDEX workouts_by_start;
+DROP INDEX workouts_long;
 CREATE INDEX samples_by_type_and_end ON samples (type, end_ms);
 CREATE INDEX workouts_by_end ON workouts (end_ms);
 PRAGMA user_version = 1;
 COMMIT;`;
 
+/** Each entry moves the schema up one version. Never edit one that has shipped; add another. */
 export const MIGRATIONS: readonly string[] = [
   `
   CREATE TABLE devices (
@@ -102,6 +103,7 @@ export const MIGRATIONS: readonly string[] = [
   DROP INDEX workouts_by_end;
   CREATE INDEX workouts_by_start ON workouts (start_ms);
   CREATE INDEX samples_long ON samples (type, start_ms) WHERE end_ms - start_ms > 172800000;
+  CREATE INDEX workouts_long ON workouts (start_ms) WHERE end_ms - start_ms > 172800000;
   `,
 ];
 

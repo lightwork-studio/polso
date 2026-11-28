@@ -25,6 +25,11 @@ Agents send the token as `Authorization: Bearer <token>`. Requests without a val
 including a phone's device token, get `401` before the server reads their body, and requests
 from web pages (with an `Origin` header) get `403`.
 
+Every records query reads the records it returns plus those starting in the two days before the
+asked range, and the rare records longer than two days, so no question about any period scans the
+whole history, whatever any one record's length. A paired phone can still slow agents down by
+uploading masses of records; it's trusted with your data anyway.
+
 Daily statistics cover whole days: asked for a range that ends partway through a day, the
 server returns that whole day's value, where the phone would stop at the given time.
 
@@ -41,6 +46,7 @@ DROP TABLE agents;
 DROP INDEX samples_by_type_and_start;
 DROP INDEX samples_long;
 DROP INDEX workouts_by_start;
+DROP INDEX workouts_long;
 CREATE INDEX samples_by_type_and_end ON samples (type, end_ms);
 CREATE INDEX workouts_by_end ON workouts (end_ms);
 PRAGMA user_version = 1;
